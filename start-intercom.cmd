@@ -10,7 +10,12 @@ REM
 REM Two logs, deliberately separate: node holds server.log open for the lifetime
 REM of the process, so the launcher cannot append to it (Windows file lock).
 REM   server.log   - the node process's own stdout/stderr
-REM   startup.log  - launcher decisions: rebuilds, refusals, start attempts
+REM   startup.log  - launcher decisions: rebuilds, refusals, restarts
+REM
+REM node is supervised in a loop and its exit code is propagated out of this
+REM script. Both matter: endlocal resets ERRORLEVEL, so without the explicit
+REM `endlocal & exit /b %RC%` the Scheduled Task sees success after a crash and
+REM never applies its restart policy.
 
 setlocal
 set "SERVER_DIR=C:\Users\DELL\Projects\Default Project\qr-intercom\server"
@@ -18,6 +23,7 @@ set "NODE=C:\Program Files\nodejs\node.exe"
 set "LOG_DIR=%LOCALAPPDATA%\Temp\qr-intercom"
 set "LOG=%LOG_DIR%\server.log"
 set "STARTUP_LOG=%LOG_DIR%\startup.log"
+set "MAX_RESTARTS=10"
 
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
 
@@ -42,8 +48,27 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr "LISTENING" ^| findstr ":3010
   exit /b 0
 )
 
-echo [%date% %time%] Starting QR Intercom server>>"%STARTUP_LOG%"
+set /a ATTEMPT=0
 pushd "%SERVER_DIR%"
+
+:run
+set /a ATTEMPT+=1
+echo [%date% %time%] Starting QR Intercom server (attempt %ATTEMPT% of %MAX_RESTARTS%)>>"%STARTUP_LOG%"
 "%NODE%" dist/index.js >>"%LOG%" 2>&1
-popd
-endlocal
+set "RC=%ERRORLEVEL%"
+
+if "%RC%"=="0" (
+  echo [%date% %time%] Exited cleanly.>>"%STARTUP_LOG%"
+) else (
+  echo [%date% %time%] CRASHED with exit code %RC%.>>"%STARTUP_LOG%"
+)
+
+if %ATTEMPT% GEQ %MAX_RESTARTS% (
+  echo [%date% %time%] Reached %MAX_RESTARTS% attempts - giving up.>>"%STARTUP_LOG%"
+  popd
+  endlocal & exit /b %RC%
+)
+
+echo [%date% %time%] Restarting in 10s...>>"%STARTUP_LOG%"
+timeout /t 10 /nobreak >nul
+goto run

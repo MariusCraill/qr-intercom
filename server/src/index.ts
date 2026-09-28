@@ -199,3 +199,20 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   closeAll();
 });
+
+// ── Last-resort crash guards ─────────────────────────────────────────
+// Async route rejections are handled per-request by ah() in routes/api.ts.
+// These catch anything that still escapes - a stray promise, a throw outside
+// the request cycle. An unhandled rejection in either takes the whole process
+// down, and since the funnel has no second backend, that means every
+// resident's intercom goes offline until someone notices.
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] unhandled promise rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] uncaught exception:", err);
+  // The process state is no longer trustworthy, so hand over to the
+  // Scheduled Task, which is configured to restart this up to 3 times.
+  closeAll();
+});
