@@ -48,8 +48,36 @@ const signaling = new SignalingServer(...listenServers);
 console.log(`[WS] Signaling server attached to /ws (${server ? "HTTPS + " : ""}HTTP backend)`);
 
 // ── Middleware ───────────────────────────────────────────────────────
+app.set("trust proxy", config.trustProxy);
+app.disable("x-powered-by");
+
+// Baseline hardening. The clients are same-origin bundles served by this
+// server, so the policy can be strict; 'unsafe-inline' for styles is needed
+// by the Vite output and websocket: is required for the /ws signaling socket.
+app.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "geolocation=(), camera=(self), microphone=(self)");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "media-src 'self' blob:",
+      "connect-src 'self' ws: wss:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; "),
+  );
+  next();
+});
+
 app.use(cors({ origin: config.corsOrigins, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "256kb" }));
 
 // ── REST API ────────────────────────────────────────────────────────
 app.use("/api", createApiRouter(db, config));
@@ -99,6 +127,23 @@ app.get("/admin/*", (_req, res) => {
     res.status(404).send("Admin client not built. Run: cd client-admin && npm run build");
   }
 });
+
+// ── Error handling ──────────────────────────────────────────────────
+// Must be registered after every route. Without this, Express's default
+// handler returns the full stack trace to the client, which leaks absolute
+// filesystem paths and the fact that a table/column is missing.
+app.use(
+  (
+    err: Error,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    console.error("[ERROR]", err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: "Internal server error" });
+  },
+);
 
 // ── Start ───────────────────────────────────────────────────────────
 // A listener that cannot bind must never take the process down: HTTP_PORT is

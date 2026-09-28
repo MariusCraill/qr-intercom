@@ -16,6 +16,9 @@ export interface Config {
   databasePath: string;
   turnServers: IceServer[];
   corsOrigins: string[];
+  /** Opt in to X-Forwarded-For. Off by default so req.ip cannot be spoofed
+   *  to bypass the login rate limiter. Turn on only behind a trusted proxy. */
+  trustProxy: boolean;
 }
 
 /**
@@ -62,5 +65,6 @@ export function loadConfig(): Config {
     databasePath: process.env.DATABASE_PATH || "./data/intercom.db",
     turnServers: JSON.parse(process.env.TURN_SERVERS || "[]"),
     corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:5174,https://desktop-obtdcvt.tail973ab1.ts.net").split(","),
+    trustProxy: process.env.TRUST_PROXY === "true",
   };
 }

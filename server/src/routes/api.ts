@@ -5,6 +5,21 @@ import bcrypt from "bcryptjs";
 import type { Config } from "../config/index.js";
 import { signAccessToken } from "../auth/jwt.js";
 import { requireAuth } from "../auth/middleware.js";
+import { loginRateLimit, clearRateLimit } from "../auth/rate-limit.js";
+import { validatePassword, isValidEmail } from "../auth/validate.js";
+
+// The Tailscale funnel exposes this server publicly, so both login routes are
+// brute-forceable without a limit. Tighter on admin, which is the prize.
+const residentLoginLimit = loginRateLimit({
+  max: 10,
+  windowMs: 15 * 60 * 1000,
+  message: "Too many login attempts. Try again in a few minutes.",
+});
+const adminLoginLimit = loginRateLimit({
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+  message: "Too many admin login attempts. Try again in a few minutes.",
+});
 
 export function createApiRouter(db: Database.Database, config: Config): Router {
   const router = Router();
@@ -22,6 +37,12 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
   });
 
   // ── Public: Visitor requests a temporary session token ────────────
+  // This endpoint is unauthenticated by design, so the token must NOT carry
+  // the "resident" role. It previously did, which meant anyone could mint a
+  // resident-scoped token for any residentId and then pass requireAuth +
+  // the role checks on /residents/me/unlock and /residents/me/call-logs.
+  // The visitor client fetches this token but never sends it anywhere, so
+  // downgrading the role breaks nothing.
   router.post("/residents/:residentId/visitor-session", (req: Request, res: Response) => {
     const resident = db
       .prepare("SELECT id FROM residents WHERE id = ?")
@@ -31,16 +52,20 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
       return;
     }
     const sessionId = uuid();
-    const token = signAccessToken(config, {
-      sub: sessionId,
-      role: "resident", // visitors carry a short-lived resident-scoped token (informational)
-      residentId: resident.id,
-    });
+    const token = signAccessToken(
+      config,
+      {
+        sub: sessionId,
+        role: "visitor",
+        residentId: resident.id,
+      },
+      "2h",
+    );
     res.json({ sessionId, token, residentId: resident.id });
   });
 
   // ── Auth: Resident login ──────────────────────────────────────────
-  router.post("/auth/resident-login", async (req: Request, res: Response) => {
+  router.post("/auth/resident-login", residentLoginLimit, async (req: Request, res: Response) => {
     const { phone, password } = req.body;
     if (!phone || !password) {
       res.status(400).json({ error: "Phone and password required" });
@@ -53,11 +78,14 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
       res.status(401).json({ error: "Invalid credentials" });
       return;
     }
-    const valid = bcrypt.compareSync(password, resident.password_hash);
+    // async compare: the sync version blocks the event loop for the full
+    // bcrypt cost, which an unauthenticated caller can trigger repeatedly.
+    const valid = await bcrypt.compare(password, resident.password_hash);
     if (!valid) {
       res.status(401).json({ error: "Invalid credentials" });
       return;
     }
+    clearRateLimit(req);
     const token = signAccessToken(config, {
       sub: resident.id,
       role: "resident",
@@ -76,10 +104,33 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
   });
 
   // ── Auth: Resident self-registration ─────────────────────────────
-  router.post("/auth/resident-register", async (req: Request, res: Response) => {
+  // Open registration means anyone can create an account, so the password
+  // has to be non-trivial or the whole door is decorative.
+  router.post("/auth/resident-register", residentLoginLimit, async (req: Request, res: Response) => {
     const { unit, name, phone, password, email } = req.body;
     if (!unit || !name || !phone || !password) {
       res.status(400).json({ error: "unit, name, phone, password required" });
+      return;
+    }
+    if (typeof name !== "string" || name.length > 100) {
+      res.status(400).json({ error: "Invalid name" });
+      return;
+    }
+    if (typeof unit !== "string" || unit.length > 50) {
+      res.status(400).json({ error: "Invalid unit" });
+      return;
+    }
+    if (typeof phone !== "string" || phone.length > 40) {
+      res.status(400).json({ error: "Invalid phone number" });
+      return;
+    }
+    if (email && !isValidEmail(email)) {
+      res.status(400).json({ error: "Invalid email address" });
+      return;
+    }
+    const pwError = validatePassword(password);
+    if (pwError) {
+      res.status(400).json({ error: pwError });
       return;
     }
     const existing = db.prepare("SELECT id FROM residents WHERE phone = ?").get(phone);
@@ -95,7 +146,7 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
       }
     }
     const id = uuid();
-    const password_hash = bcrypt.hashSync(password, 10);
+    const password_hash = await bcrypt.hash(password, 10);
     db.prepare(
       "INSERT INTO residents (id, unit, name, phone, password_hash, email) VALUES (?, ?, ?, ?, ?, ?)"
     ).run(id, unit, name, phone, password_hash, email || null);
@@ -204,7 +255,7 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
   router.put(
     "/residents/me",
     requireAuth(config),
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
       if (req.auth?.role !== "resident") {
         res.status(403).json({ error: "Forbidden" });
         return;
@@ -215,6 +266,22 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
       if (!name || !phone) {
         res.status(400).json({ error: "name and phone required" });
         return;
+      }
+      if (typeof name !== "string" || name.length > 100) {
+        res.status(400).json({ error: "Invalid name" });
+        return;
+      }
+      if (typeof phone !== "string" || phone.length > 40) {
+        res.status(400).json({ error: "Invalid phone number" });
+        return;
+      }
+      if (email && !isValidEmail(email)) {
+        res.status(400).json({ error: "Invalid email address" });
+        return;
+      }
+      if (password) {
+        const pwError = validatePassword(password);
+        if (pwError) { res.status(400).json({ error: pwError }); return; }
       }
 
       if (phone) {
@@ -228,7 +295,7 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
       }
 
       if (password) {
-        const hash = bcrypt.hashSync(password, 10);
+        const hash = await bcrypt.hash(password, 10);
         db.prepare("UPDATE residents SET name=?, phone=?, email=?, password_hash=? WHERE id=?")
           .run(name, phone, email || null, hash, id);
       } else {
@@ -259,7 +326,7 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
   }
 
   // ── Admin login ─────────────────────────────────────────────────
-  router.post("/admin/login", (req: Request, res: Response) => {
+  router.post("/admin/login", adminLoginLimit, async (req: Request, res: Response) => {
     const { email, password } = req.body;
     if (!email || !password) {
       res.status(400).json({ error: "Email and password required" });
@@ -268,10 +335,12 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
     const admin = db
       .prepare("SELECT * FROM admins WHERE email = ?")
       .get(email) as any;
-    if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
+    const valid = admin ? await bcrypt.compare(password, admin.password_hash) : false;
+    if (!admin || !valid) {
       res.status(401).json({ error: "Invalid credentials" });
       return;
     }
+    clearRateLimit(req);
     const token = signAccessToken(config, {
       sub: admin.id,
       role: "admin",
