@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_dark">
+
+    <ImageView
+        android:id="@+id/imageRemoteVideo"
+        android:layout_width="300dp"
+        android:layout_height="225dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="48dp"
+        android:scaleType="fitXY"
+        android:background="@color/bg_dark" />
+
+    <TextureView
+        android:id="@+id/textureView"
+        android:layout_width="120dp"
+        android:layout_height="160dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:elevation="4dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/textCallerInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/visitor_calling"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/textCallStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="In Call"
+                android:textColor="@color/accent"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/textDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:layout_marginStart="16dp"
+                android:fontFamily="monospace" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEndCall"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="@string/btn_end_call"
+            android:textColor="@color/danger"
+            app:strokeColor="@color/danger"
+            app:cornerRadius="10dp"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+</FrameLayout>

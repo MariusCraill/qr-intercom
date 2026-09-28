@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Trust our dev CA for every host, so WebView getUsUserMedia keeps a
+         secure origin regardless of which server IP the app is configured with. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="@raw/cert_pem"/>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>

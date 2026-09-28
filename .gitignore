@@ -1,0 +1,32 @@
+node_modules/
+dist/
+data/
+.env
+.env.*
+!.env.example
+*.db
+.firmware/
+.vscode/
+.idea/
+
+# TLS material - never commit private keys
+certs/
+*.pem
+*.crt
+*.key
+
+# Android / Gradle build output
+android-resident/.gradle/
+android-resident/build/
+android-resident/app/build/
+android-resident/local.properties
+android-resident/app/debug/
+*.jks
+*.keystore
+# Built APKs are regenerable via gradle and dominate repo size
+*.apk
+
+# Logs & OS noise
+*.log
+Thumbs.db
+.DS_Store
