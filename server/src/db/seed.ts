@@ -4,10 +4,42 @@ import { initializeDatabase } from "./schema.js";
 
 const db = initializeDatabase("./data/intercom.db");
 
+// This script DROPs the residents, admins and call_logs tables before
+// recreating them. Against a populated database that is silent total data
+// loss, and the README tells people to run `npm run db:seed` as a setup step.
+// Refuse unless the caller opts in, so a stray run cannot wipe real accounts.
+const FORCE = process.argv.includes("--force") || process.env.SEED_FORCE === "true";
+
+const existing = db
+  .prepare(
+    `SELECT (SELECT COUNT(*) FROM residents) + (SELECT COUNT(*) FROM admins) AS n`,
+  )
+  .get() as any;
+
+if (existing.n > 0 && !FORCE) {
+  console.error(
+    `[Seed] REFUSING: this database already holds ${existing.n} account(s).`,
+  );
+  console.error("[Seed] This script drops and recreates every table, so it is destructive.");
+  console.error("[Seed] If you are setting up a fresh database, re-run with --force:");
+  console.error("[Seed]     npm run db:seed -- --force");
+  console.error("[Seed] To move an existing database onto the current schema, use:");
+  console.error("[Seed]     npm run db:migrate        (that one preserves data)");
+  db.close();
+  process.exit(1);
+}
+
+if (existing.n > 0) {
+  console.warn(
+    `[Seed] --force given: destroying ${existing.n} existing account(s). This cannot be undone.`,
+  );
+}
+
 db.exec(`
   DROP TABLE IF EXISTS call_logs;
   DROP TABLE IF EXISTS residents;
   DROP TABLE IF EXISTS admins;
+  DROP TABLE IF EXISTS gates;
 `);
 
 db.exec(`
