@@ -35,7 +35,7 @@ A complete web-based intercom system with WebRTC video/audio, MQTT-driven gate c
 
 ### Prerequisites
 - Node.js 18+
-- Docker (for Mosquitto MQTT broker)
+- MQTT broker (Mosquitto) — required for gate unlock; the video intercom works without it
 - PlatformIO CLI (for ESP32 firmware)
 
 ### 1. Start MQTT Broker
@@ -49,12 +49,32 @@ docker compose up -d
 ```bash
 cd server
 npm install
-cp .env .env.local   # Edit secrets
-npm run db:seed       # Seed gates + demo residents
-npm run dev
+cp .env.example .env     # then set JWT_SECRET to a random value
+npm run db:migrate       # bring an existing database onto the current schema
+npm run build && npm start
 ```
 
-Server runs at `http://localhost:3000`.
+> **Do not run `npm run db:seed` against a database with real accounts.** It
+> drops and recreates the `residents`, `admins` and `call_logs` tables, so it
+> destroys all existing data. It now refuses to run unless you pass
+> `--force`, and is only appropriate for a brand-new database.
+> Use `npm run db:migrate` to move an existing database — that one preserves
+> every row.
+
+The server listens on two ports, and both matter:
+
+| Port | Default | Purpose |
+|------|---------|---------|
+| `HTTP_PORT` | 3010 | Plain HTTP. **This is what the Tailscale Funnel proxies to.** |
+| `PORT` | 3011 | Direct LAN HTTPS/WSS. Optional; the server runs HTTP-only if the certs are missing. |
+
+`HTTP_PORT` must match your `tailscale funnel status` config, which maps
+`/api`, `/ws`, `/admin`, `/visit` and `/resident` onto it. If they disagree the
+funnel returns 502 for everything.
+
+On Windows, `start-intercom.cmd` starts the server with the right working
+directory and supervises it across crashes; a Scheduled Task named
+**QR Intercom Server** runs it at logon.
 
 ### 3. Start Visitor Frontend
 
