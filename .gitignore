@@ -26,6 +26,10 @@ android-resident/app/debug/
 # Built APKs are regenerable via gradle and dominate repo size
 *.apk
 
+# Device config: holds the Wi-Fi password, gate UUID and the HMAC secret
+# shared with the server. config.h.example is committed instead.
+firmware/intercom_gate/config.h
+
 # Logs & OS noise
 *.log
 Thumbs.db

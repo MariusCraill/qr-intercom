@@ -1,5 +1,17 @@
 #pragma once
 
+// ── LOCAL DEVICE CONFIG - NOT COMMITTED ──────────────────────────────
+// This is config.h.example. Copy it to config.h and fill it in:
+//
+//     cp config.h.example config.h
+//
+// config.h is gitignored because it holds the Wi-Fi password, the gate UUID
+// and the HMAC secret shared with the server. Do not commit it.
+//
+// HMAC_SECRET must match the server's MQTT_GATE_SECRET in server/.env. If
+// they differ the ESP32 will sign commands the server rejects, and the gate
+// will never open.
+
 // ── Wi-Fi ───────────────────────────────────────────────────────────
 #define WIFI_SSID           "YourSSID"
 #define WIFI_PASSWORD       "YourPassword"
