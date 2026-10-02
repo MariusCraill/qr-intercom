@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Personal Agent</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Personal Agent</div>
+    <div class="source-toggle" id="sourceToggle" title="Choose whether the agent may also search the internet">
+      <button class="sbtn active" data-mode="context">Context only</button>
+      <button class="sbtn" data-mode="internet">Context + Internet</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <section class="panel" id="settingsPanel">
+        <h3>⚙ Settings</h3>
+        <label>Provider
+          <select id="cfgProvider">
+            <option value="">OpenAI-compatible (custom)</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </label>
+        <label>Base URL (optional)
+          <input id="cfgBaseUrl" placeholder="e.g. http://localhost:11434/v1" />
+        </label>
+        <label>Model
+          <input id="cfgModel" placeholder="e.g. gpt-4o-mini, llama3.1" />
+        </label>
+        <label>Web search method
+          <select id="cfgWebSearch">
+            <option value="duckduckgo">DuckDuckGo (no key)</option>
+            <option value="tavily">Tavily</option>
+            <option value="none">None</option>
+          </select>
+        </label>
+        <hr />
+        <label>MS Tenant ID
+          <input id="cfgTenantId" placeholder="common" />
+        </label>
+        <label>MS Client ID
+          <input id="cfgClientId" placeholder="Azure app client id" />
+        </label>
+        <label>Agent token
+          <input id="cfgToken" type="password" placeholder="AGENT_TOKEN from .env" />
+        </label>
+        <button id="saveConfigBtn">Save Settings</button>
+        <div id="configStatus" class="hint"></div>
+        <div class="hint">API keys, Tavily key, MS secret and password are read
+          from <code>.env</code> only and are never stored by this page.</div>
+      </section>
+
+      <section class="panel" id="calendarPanel">
+        <h3>📅 Calendar</h3>
+        <div class="row">
+          <button id="loadCalendarBtn">Load upcoming events</button>
+        </div>
+        <div id="calendarList" class="list"></div>
+      </section>
+
+      <section class="panel" id="notesPanel">
+        <h3>📝 Notes (OneNote)</h3>
+        <div class="row">
+          <select id="notebookSelect"><option value="">Select notebook…</option></select>
+          <select id="sectionSelect" disabled><option value="">Select section…</option></select>
+        </div>
+        <div id="notesList" class="list"></div>
+      </section>
+
+      <section class="panel" id="docsPanel">
+        <h3>📄 Documents</h3>
+        <div id="dropZone" class="dropzone">
+          Drag &amp; drop documents here, or click to browse
+          <input type="file" id="fileInput" multiple hidden />
+        </div>
+        <div id="docsList" class="list"></div>
+      </section>
+    </aside>
+
+    <!-- Chat -->
+    <main class="chat">
+      <div class="contextbar" id="contextBar">
+        <span id="ctxCounts">Select calendar / notes / documents to include as context.</span>
+      </div>
+      <div id="messages" class="messages"></div>
+      <form id="chatForm" class="composer">
+        <textarea id="input" rows="1" placeholder="Ask me anything about your calendar, notes, documents…"></textarea>
+        <button type="submit" id="sendBtn">Send</button>
+      </form>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

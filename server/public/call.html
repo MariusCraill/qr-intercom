@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QR Intercom - Call Resident</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+    }
+    .call-container {
+      max-width: 480px;
+      width: 100%;
+      padding: 24px;
+    }
+    .resident-avatar {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 56px;
+      border: 3px solid var(--primary);
+    }
+    .resident-name {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .resident-apt {
+      color: var(--text-dim);
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+    .call-btn {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: var(--success);
+      color: white;
+      border: none;
+      font-size: 1.2rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin: 32px auto 0;
+      box-shadow: 0 8px 32px rgba(22, 163, 74, 0.3);
+    }
+    .call-btn:hover { transform: scale(1.05); background: var(--success-dark); }
+    .call-btn:active { transform: scale(0.98); }
+    .call-btn.ringing {
+      background: var(--danger);
+      animation: pulse 1.5s infinite;
+    }
+    .call-btn.in-call {
+      background: var(--danger);
+      box-shadow: 0 8px 32px rgba(220, 38, 38, 0.3);
+    }
+    .call-btn .icon { font-size: 48px; }
+    .status-text {
+      margin-top: 24px;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+    .visitor-id {
+      margin-top: 40px;
+      padding: 12px;
+      background: var(--bg-card);
+      border-radius: 8px;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+    .error-text {
+      color: var(--danger);
+      margin-top: 16px;
+    }
+    .video-container {
+      position: fixed;
+      inset: 0;
+      background: black;
+      z-index: 100;
+      display: none;
+    }
+    .video-container.active { display: flex; align-items: center; justify-content: center; }
+    .video-container video {
+      max-width: 100%;
+      max-height: 100%;
+    }
+    .video-overlay {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 101;
+      display: flex;
+      gap: 12px;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+      50% { box-shadow: 0 0 0 20px rgba(220, 38, 38, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="call-container">
+    <div class="resident-avatar" id="resident-avatar">👤</div>
+    <div class="resident-name" id="resident-name">Loading...</div>
+    <div class="resident-apt" id="resident-apt"></div>
+
+    <button class="call-btn" id="call-btn" onclick="toggleCall()">
+      <span class="icon">📞</span>
+      <span id="call-btn-text">Call</span>
+    </button>
+
+    <div class="status-text" id="status-text">Tap to call this resident</div>
+    <div class="error-text" id="error-text"></div>
+    <div class="visitor-id" id="visitor-id"></div>
+  </div>
+
+  <div class="video-container" id="video-container">
+    <video id="remote-video" autoplay playsinline></video>
+    <div class="video-overlay">
+      <button class="btn btn-danger" onclick="endCall()" style="font-size:1.1rem;padding:14px 32px">End Call</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    var residentId = window.location.pathname.split('/').pop();
+    var visitorId = 'visitor-' + Math.random().toString(36).substr(2, 8);
+    var socket = io();
+    var callId = null;
+    var localStream = null;
+    var peerConnection = null;
+
+    var ICE_SERVERS = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    document.getElementById('visitor-id').textContent = 'Visitor: ' + visitorId;
+
+    async function loadResident() {
+      try {
+        var res = await fetch('/api/public/resident/' + residentId);
+        if (res.ok) {
+          var data = await res.json();
+          document.getElementById('resident-name').textContent = data.name;
+          document.getElementById('resident-apt').textContent = 'Apartment ' + data.apartment;
+        } else {
+          document.getElementById('resident-name').textContent = 'Resident Not Found';
+          document.getElementById('call-btn').style.display = 'none';
+          document.getElementById('error-text').textContent = 'This resident does not exist.';
+        }
+      } catch (e) {
+        document.getElementById('resident-name').textContent = 'Resident ' + residentId;
+      }
+    }
+
+    function toggleCall() {
+      if (callId) {
+        endCall();
+      } else {
+        startCall();
+      }
+    }
+
+    async function startCall() {
+      var btn = document.getElementById('call-btn');
+      btn.classList.add('ringing');
+      document.getElementById('call-btn-text').textContent = 'Calling...';
+      document.getElementById('status-text').textContent = 'Connecting to resident...';
+      document.getElementById('error-text').textContent = '';
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (e) {
+        document.getElementById('status-text').textContent = 'Camera/mic access denied';
+        document.getElementById('error-text').textContent = 'Please allow camera and microphone access.';
+        btn.classList.remove('ringing');
+        document.getElementById('call-btn-text').textContent = 'Call';
+        return;
+      }
+
+      socket.emit('call:direct-request', { residentId, visitorId });
+    }
+
+    socket.on('call:requested', (data) => {
+      callId = data.callId;
+      document.getElementById('status-text').textContent = 'Ringing resident...';
+    });
+
+    socket.on('call:error', (data) => {
+      document.getElementById('error-text').textContent = data.error;
+      var btn = document.getElementById('call-btn');
+      btn.classList.remove('ringing');
+      document.getElementById('call-btn-text').textContent = 'Call';
+      document.getElementById('status-text').textContent = 'Tap to call this resident';
+    });
+
+    socket.on('call:answered', async (data) => {
+      if (data.callId === callId) {
+        var btn = document.getElementById('call-btn');
+        btn.classList.remove('ringing');
+        btn.classList.add('in-call');
+        document.getElementById('call-btn-text').textContent = 'End Call';
+        document.getElementById('status-text').textContent = 'Connected!';
+        document.getElementById('error-text').textContent = '';
+
+        peerConnection = new RTCPeerConnection(ICE_SERVERS);
+        localStream.getTracks().forEach(function(t) { peerConnection.addTrack(t, localStream); });
+
+        peerConnection.ontrack = function(e) {
+          document.getElementById('remote-video').srcObject = e.streams[0];
+          document.getElementById('video-container').classList.add('active');
+        };
+
+        peerConnection.onicecandidate = function(e) {
+          if (e.candidate) socket.emit('webrtc:ice-candidate', { callId: callId, candidate: e.candidate });
+        };
+
+        var offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('webrtc:offer', { callId: callId, offer: offer });
+      }
+    });
+
+    socket.on('webrtc:answer', async function(data) {
+      if (data.callId === callId && peerConnection) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
+    });
+
+    socket.on('webrtc:ice-candidate', function(data) {
+      if (data.callId === callId && peerConnection) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
+    });
+
+    socket.on('call:ended', function(data) {
+      if (data.callId === callId) {
+        resetUI();
+      }
+    });
+
+    socket.on('gate:unlocked', function(data) {
+      if (data.callId === callId) {
+        document.getElementById('status-text').textContent = 'Gate unlocked!';
+        setTimeout(function() {
+          document.getElementById('status-text').textContent = 'Connected!';
+        }, 3000);
+      }
+    });
+
+    function endCall() {
+      if (callId) {
+        socket.emit('call:end', { callId: callId });
+      }
+      resetUI();
+    }
+
+    function resetUI() {
+      callId = null;
+      if (peerConnection) { peerConnection.close(); peerConnection = null; }
+      if (localStream) { localStream.getTracks().forEach(function(t) { t.stop(); }); localStream = null; }
+
+      document.getElementById('video-container').classList.remove('active');
+      var btn = document.getElementById('call-btn');
+      btn.classList.remove('ringing', 'in-call');
+      document.getElementById('call-btn-text').textContent = 'Call';
+      document.getElementById('status-text').textContent = 'Tap to call this resident';
+    }
+
+    loadResident();
+  </script>
+</body>
+</html>

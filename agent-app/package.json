@@ -1,0 +1,20 @@
+{
+  "name": "personal-agent",
+  "version": "1.0.0",
+  "description": "Personal agent - calendar, notes, document context, chat with optional internet search",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.16.2",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mammoth": "^1.8.0",
+    "multer": "^2.0.1",
+    "openai": "^4.77.0",
+    "pdf-parse": "^1.1.1"
+  }
+}

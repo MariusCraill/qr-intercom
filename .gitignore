@@ -1,0 +1,15 @@
+# generated self-signed TLS key - never commit
+.certs/
+
+node_modules/
+*.db
+
+# local env files with real secrets - only .env.example is committed
+.env
+
+# IDE / editor config
+.idea/
+.vscode/
+*.iml
+.DS_Store
+

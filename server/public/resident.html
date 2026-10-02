@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Intercom - Resident</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .resident-app { max-width: 600px; margin: 0 auto; padding: 24px; }
+    .call-notification {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .call-notification.active { display: flex; }
+    .call-notification h2 { font-size: 1.5rem; }
+    .call-actions { display: flex; gap: 16px; }
+    .call-actions button {
+      width: 120px; height: 120px; border-radius: 50%; border: none;
+      font-size: 1rem; font-weight: 600; cursor: pointer; color: white;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    }
+    .call-actions .answer-btn { background: var(--success); }
+    .call-actions .decline-btn { background: var(--danger); }
+    .call-actions .unlock-btn { background: #7c3aed; }
+    .call-actions button .icon { font-size: 32px; }
+
+    .video-container {
+      position: fixed; inset: 0; background: black; z-index: 101;
+      display: none; align-items: center; justify-content: center; flex-direction: column;
+    }
+    .video-container.active { display: flex; }
+    .video-container video { max-width: 100%; max-height: 80vh; border-radius: 12px; }
+    .video-controls { position: fixed; bottom: 40px; display: flex; gap: 16px; z-index: 102; }
+
+    .ringtone {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--danger); color: white; padding: 12px 24px;
+      border-radius: 999px; font-weight: 600; z-index: 101; display: none;
+      animation: pulse 1s infinite;
+    }
+    .ringtone.active { display: block; }
+
+    .login-box { max-width: 400px; margin: 80px auto; }
+
+    .calls-list { margin-top: 24px; }
+    .calls-list h3 { margin-bottom: 12px; font-size: 1rem; }
+    .call-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; background: var(--bg-card); border-radius: 8px; margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="resident-app">
+    <div id="login-view">
+      <div class="card login-box">
+        <h2>Resident Login</h2>
+        <div class="form-group"><label>Email</label><input type="email" id="login-email"></div>
+        <div class="form-group"><label>Password</label><input type="password" id="login-password"></div>
+        <button class="btn btn-primary" onclick="login()" style="margin-top:12px">Login</button>
+        <p id="login-error" style="color:var(--danger);margin-top:8px;font-size:0.85rem"></p>
+      </div>
+    </div>
+
+    <div id="main-view" style="display:none">
+      <header style="padding:0 0 16px;background:none;border:none">
+        <h1 id="resident-name">Resident</h1>
+        <nav>
+          <a href="/" class="btn btn-ghost btn-sm">Dashboard</a>
+          <button class="btn btn-ghost btn-sm" onclick="logout()">Logout</button>
+        </nav>
+      </header>
+
+      <div class="card">
+        <h2>Active Calls</h2>
+        <p id="no-calls" style="color:var(--text-dim)">No active calls. You will be notified when a visitor rings.</p>
+        <div id="active-calls"></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Call History</h2>
+        <div id="call-history"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ringtone" id="ringtone">Incoming Call!</div>
+
+  <div class="call-notification" id="call-notification">
+    <h2>Incoming Call</h2>
+    <p id="call-from" style="color:var(--text-dim)">Visitor at gate</p>
+    <div class="call-actions">
+      <button class="decline-btn" onclick="declineCall()"><span class="icon">📞</span>Decline</button>
+      <button class="answer-btn" onclick="answerCall()"><span class="icon">📞</span>Answer</button>
+    </div>
+  </div>
+
+  <div class="video-container" id="video-container">
+    <video id="remote-video" autoplay playsinline></video>
+    <div class="video-controls">
+      <button class="btn btn-primary" onclick="unlockGate()" id="unlock-btn" style="font-size:1rem">🔓 Unlock Gate</button>
+      <button class="btn btn-danger" onclick="endCall()" style="font-size:1rem">End Call</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let token = localStorage.getItem('resident_token');
+    let user = null;
+    // The socket carries the same JWT as the REST calls; the server rejects
+    // answer/unlock/room-join events from anonymous sockets.
+    let socket = io({ auth: { token } });
+    let currentCallId = null;
+    let peerConnection = null;
+    let localStream = null;
+
+    const ICE_SERVERS = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    async function api(url, opts = {}) {
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(url, { ...opts, headers });
+      if (res.status === 401) { logout(); throw new Error('Unauthorized'); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    }
+
+    async function login() {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      try {
+        const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        token = data.token;
+        user = data.user;
+        localStorage.setItem('resident_token', token);
+        // Reconnect so the socket is authenticated before joining the room.
+        socket.auth = { token };
+        socket.disconnect().connect();
+        showMain();
+      } catch (e) {
+        document.getElementById('login-error').textContent = e.message;
+      }
+    }
+
+    function logout() {
+      token = null;
+      user = null;
+      localStorage.removeItem('resident_token');
+      document.getElementById('login-view').style.display = 'block';
+      document.getElementById('main-view').style.display = 'none';
+    }
+
+    async function showMain() {
+      try {
+        const data = await api('/api/auth/me');
+        user = data.user;
+        document.getElementById('resident-name').textContent = `Welcome, ${user.name}`;
+        document.getElementById('login-view').style.display = 'none';
+        document.getElementById('main-view').style.display = 'block';
+        socket.emit('call:resident-join', { residentId: user.id });
+        loadHistory();
+      } catch {
+        document.getElementById('login-view').style.display = 'block';
+      }
+    }
+
+    async function loadHistory() {
+      try {
+        const myCalls = await api('/api/calls/mine');
+        const container = document.getElementById('call-history');
+        if (!myCalls.length) {
+          container.innerHTML = '<p style="color:var(--text-dim)">No call history yet.</p>';
+          return;
+        }
+        container.innerHTML = myCalls.slice(0, 20).map(c => `
+          <div class="call-item">
+            <div>
+              <strong>${esc(c.gate_name || 'Unknown Gate')}</strong>
+              <div style="font-size:0.8rem;color:var(--text-dim)">${new Date(c.started_at).toLocaleString()}</div>
+            </div>
+            <span class="badge badge-green">${c.duration ? c.duration + 's' : 'N/A'}</span>
+          </div>
+        `).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    socket.on('call:incoming', (data) => {
+      currentCallId = data.callId;
+      document.getElementById('call-from').textContent = 'Visitor at gate';
+      document.getElementById('call-notification').classList.add('active');
+      document.getElementById('ringtone').classList.add('active');
+      try {
+        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVggoKOdF1OWW+DkI11Zl1fdH+MjHhrY2d5g4qIdWpkZXmBiol1a2ZmeYGJiXVrZmZ4gImJdWxmZniAiYl1bGZmeICJiXVsZ2d4gImJdW1nZ3iAiYl1bWdneICJiXVtZ2d4gA==').play();
+      } catch {}
+    });
+
+    socket.on('call:direct-incoming', (data) => {
+      currentCallId = data.callId;
+      document.getElementById('call-from').textContent = data.visitorId + ' is calling you';
+      document.getElementById('call-notification').classList.add('active');
+      document.getElementById('ringtone').classList.add('active');
+      try {
+        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVggoKOdF1OWW+DkI11Zl1fdH+MjHhrY2d5g4qIdWpkZXmBiol1a2ZmeYGJiXVrZmZ4gImJdWxmZniAiYl1bGZmeICJiXVsZ2d4gImJdW1nZ3iAiYl1bWdneICJiXVtZ2d4gA==').play();
+      } catch {}
+    });
+
+    socket.on('call:ended', (data) => {
+      if (data.callId === currentCallId) {
+        resetCall();
+        loadHistory();
+      }
+    });
+
+    async function answerCall() {
+      document.getElementById('call-notification').classList.remove('active');
+      document.getElementById('ringtone').classList.remove('active');
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (e) {
+        alert('Camera/mic access denied');
+        return;
+      }
+
+      socket.emit('call:answer', { callId: currentCallId });
+
+      peerConnection = new RTCPeerConnection(ICE_SERVERS);
+      localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+
+      peerConnection.ontrack = (e) => {
+        document.getElementById('remote-video').srcObject = e.streams[0];
+        document.getElementById('video-container').classList.add('active');
+      };
+
+      peerConnection.onicecandidate = (e) => {
+        if (e.candidate) socket.emit('webrtc:ice-candidate', { callId: currentCallId, candidate: e.candidate });
+      };
+    }
+
+    socket.on('webrtc:offer', async (data) => {
+      if (data.callId === currentCallId && peerConnection) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('webrtc:answer', { callId: currentCallId, answer });
+      }
+    });
+
+    socket.on('webrtc:ice-candidate', (data) => {
+      if (data.callId === currentCallId && peerConnection) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
+    });
+
+    function unlockGate() {
+      if (currentCallId) {
+        socket.emit('call:unlock', { callId: currentCallId });
+      }
+    }
+
+    function declineCall() {
+      socket.emit('call:end', { callId: currentCallId });
+      resetCall();
+    }
+
+    function endCall() {
+      socket.emit('call:end', { callId: currentCallId });
+      resetCall();
+      loadHistory();
+    }
+
+    function resetCall() {
+      currentCallId = null;
+      if (peerConnection) { peerConnection.close(); peerConnection = null; }
+      if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+      document.getElementById('call-notification').classList.remove('active');
+      document.getElementById('ringtone').classList.remove('active');
+      document.getElementById('video-container').classList.remove('active');
+    }
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    if (token) showMain();
+  </script>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Intercom - Admin</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <h1>QR Intercom Admin</h1>
+    <nav>
+      <a href="/" class="active">Dashboard</a>
+      <a href="/test">Test</a>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">Logout</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <div id="login-view">
+      <div class="card" style="max-width:400px;margin:80px auto">
+        <h2>Admin Login</h2>
+        <div class="form-group"><label>Email</label><input type="email" id="login-email" placeholder="admin@demo.com"></div>
+        <div class="form-group"><label>Password</label><input type="password" id="login-password" placeholder="Password"></div>
+        <button class="btn btn-primary" onclick="login()" style="margin-top:12px">Login</button>
+        <p id="login-error" style="color:var(--danger);margin-top:8px;font-size:0.85rem"></p>
+      </div>
+    </div>
+
+    <div id="dashboard-view" style="display:none">
+      <div class="grid grid-3" style="margin-bottom:24px">
+        <div class="card"><div class="stat-value" id="stat-residents">0</div><div class="stat-label">Residents</div></div>
+        <div class="card"><div class="stat-value" id="stat-gates">0</div><div class="stat-label">Gates</div></div>
+        <div class="card"><div class="stat-value" id="stat-calls">0</div><div class="stat-label">Calls</div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2>Residents</h2>
+          <button class="btn btn-primary btn-sm" onclick="showAddResident()">+ Add Resident</button>
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Apt</th><th>Email</th><th>Phone</th><th>Role</th><th>Actions</th></tr></thead>
+          <tbody id="residents-table"></tbody>
+        </table>
+        <div id="residents-empty" class="empty-state"><p>No residents yet</p></div>
+      </div>
+
+      <div class="card" style="margin-bottom:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2>Resident QR Codes</h2>
+          <span style="color:var(--text-dim);font-size:0.85rem">Scan to call resident directly</span>
+        </div>
+        <div id="qr-codes" class="grid grid-3"></div>
+        <div id="qr-empty" class="empty-state"><p>Add residents to generate QR codes</p></div>
+      </div>
+
+      <div class="card" style="margin-bottom:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2>Gates</h2>
+          <button class="btn btn-primary btn-sm" onclick="showAddGate()">+ Add Gate</button>
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Location</th><th>Actions</th></tr></thead>
+          <tbody id="gates-table"></tbody>
+        </table>
+        <div id="gates-empty" class="empty-state"><p>No gates configured</p></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Calls</h2>
+        <table>
+          <thead><tr><th>Time</th><th>Resident</th><th>Status</th><th>Duration</th></tr></thead>
+          <tbody id="calls-table"></tbody>
+        </table>
+        <div id="calls-empty" class="empty-state"><p>No calls yet</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script>
+    var token = localStorage.getItem('token');
+
+    function toast(msg, type) {
+      var el = document.createElement('div');
+      el.className = 'toast toast-' + (type || 'success');
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(function() { el.remove(); }, 3000);
+    }
+
+    function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    async function api(url, opts) {
+      opts = opts || {};
+      var headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      var res = await fetch(url, Object.assign({}, opts, { headers: headers }));
+      if (res.status === 401) { logout(); throw new Error('Unauthorized'); }
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    }
+
+    async function login() {
+      var email = document.getElementById('login-email').value;
+      var password = document.getElementById('login-password').value;
+      try {
+        var data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: email, password: password }) });
+        token = data.token;
+        localStorage.setItem('token', token);
+        loadDashboard();
+      } catch (e) {
+        document.getElementById('login-error').textContent = e.message;
+      }
+    }
+
+    function logout() {
+      token = null;
+      localStorage.removeItem('token');
+      document.getElementById('dashboard-view').style.display = 'none';
+      document.getElementById('login-view').style.display = 'block';
+    }
+
+    async function loadDashboard() {
+      try {
+        await api('/api/auth/me');
+        document.getElementById('login-view').style.display = 'none';
+        document.getElementById('dashboard-view').style.display = 'block';
+        loadResidents();
+        loadGates();
+        loadCalls();
+        loadQRCodes();
+      } catch {
+        document.getElementById('login-view').style.display = 'block';
+        document.getElementById('dashboard-view').style.display = 'none';
+      }
+    }
+
+    async function loadResidents() {
+      try {
+        var residents = await api('/api/residents');
+        document.getElementById('stat-residents').textContent = residents.length;
+        var tbody = document.getElementById('residents-table');
+        var empty = document.getElementById('residents-empty');
+        if (!residents.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+        empty.style.display = 'none';
+        tbody.innerHTML = residents.map(function(r) {
+          return '<tr>' +
+            '<td>' + esc(r.name) + '</td>' +
+            '<td>' + esc(r.apartment) + '</td>' +
+            '<td>' + esc(r.email) + '</td>' +
+            '<td>' + esc(r.phone || '-') + '</td>' +
+            '<td><span class="badge ' + (r.is_admin ? 'badge-blue' : 'badge-green') + '">' + (r.is_admin ? 'Admin' : 'Resident') + '</span></td>' +
+            '<td>' +
+              '<button class="btn btn-ghost btn-sm" onclick="viewQR(\'' + r.id + '\')">QR</button> ' +
+              '<button class="btn btn-ghost btn-sm" onclick="showEditResident(\'' + r.id + '\')">Edit</button> ' +
+              '<button class="btn btn-danger btn-sm" onclick="deleteResident(\'' + r.id + '\', \'' + esc(r.name) + '\')">Del</button>' +
+            '</td></tr>';
+        }).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    async function loadGates() {
+      try {
+        var gates = await api('/api/gates');
+        document.getElementById('stat-gates').textContent = gates.length;
+        var tbody = document.getElementById('gates-table');
+        var empty = document.getElementById('gates-empty');
+        if (!gates.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+        empty.style.display = 'none';
+        tbody.innerHTML = gates.map(function(g) {
+          return '<tr>' +
+            '<td>' + esc(g.name) + '</td>' +
+            '<td>' + esc(g.location || '-') + '</td>' +
+            '<td><button class="btn btn-danger btn-sm" onclick="deleteGate(\'' + g.id + '\')">Del</button></td></tr>';
+        }).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    async function loadCalls() {
+      try {
+        var logs = await api('/api/logs/calls');
+        document.getElementById('stat-calls').textContent = logs.length;
+        var tbody = document.getElementById('calls-table');
+        var empty = document.getElementById('calls-empty');
+        if (!logs.length) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+        empty.style.display = 'none';
+        tbody.innerHTML = logs.slice(0, 20).map(function(l) {
+          var statusClass = l.status === 'ended' ? 'green' : l.status === 'active' ? 'blue' : 'yellow';
+          return '<tr>' +
+            '<td>' + new Date(l.started_at).toLocaleString() + '</td>' +
+            '<td>' + esc(l.resident_name || '-') + '</td>' +
+            '<td><span class="badge badge-' + statusClass + '">' + esc(l.status) + '</span></td>' +
+            '<td>' + (l.duration ? l.duration + 's' : '-') + '</td></tr>';
+        }).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    async function loadQRCodes() {
+      try {
+        var data = await api('/api/residents/qr-all');
+        var container = document.getElementById('qr-codes');
+        var empty = document.getElementById('qr-empty');
+        if (!data.length) { container.innerHTML = ''; empty.style.display = 'block'; return; }
+        empty.style.display = 'none';
+        container.innerHTML = data.map(function(d) {
+          return '<div class="card" style="text-align:center;padding:20px">' +
+            '<h3 style="margin-bottom:4px">' + esc(d.resident.name) + '</h3>' +
+            '<div style="font-size:0.85rem;color:var(--text-dim);margin-bottom:16px">Apt ' + esc(d.resident.apartment) + '</div>' +
+            '<img src="' + d.qr + '" alt="QR" style="max-width:180px;border-radius:8px;background:white;padding:8px">' +
+            '<p style="margin-top:12px;font-size:0.75rem;color:var(--text-dim);word-break:break-all">' + d.url + '</p>' +
+            '<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="window.open(\'' + d.url + '\',\'_blank\')">Open Call Page</button>' +
+          '</div>';
+        }).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    function showAddResident() {
+      document.getElementById('modal-root').innerHTML =
+        '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">' +
+        '<div class="modal">' +
+          '<h2>Add Resident</h2>' +
+          '<div class="form-group"><label>Name</label><input id="m-name" placeholder="Full name"></div>' +
+          '<div class="form-group"><label>Apartment</label><input id="m-apt" placeholder="e.g. 2A"></div>' +
+          '<div class="form-group"><label>Phone</label><input id="m-phone" placeholder="Optional"></div>' +
+          '<div class="form-group"><label>Email</label><input id="m-email" type="email"></div>' +
+          '<div class="form-group"><label>Password</label><input id="m-pass" type="password"></div>' +
+          '<div class="form-group"><label><input type="checkbox" id="m-admin"> Admin</label></div>' +
+          '<div class="modal-actions">' +
+            '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>' +
+            '<button class="btn btn-primary" onclick="addResident()">Add</button>' +
+          '</div>' +
+        '</div></div>';
+    }
+
+    async function addResident() {
+      var name = document.getElementById('m-name').value;
+      var apartment = document.getElementById('m-apt').value;
+      var phone = document.getElementById('m-phone').value;
+      var email = document.getElementById('m-email').value;
+      var password = document.getElementById('m-pass').value;
+      var is_admin = document.getElementById('m-admin').checked;
+      if (!name || !apartment || !email || !password) return toast('Name, apt, email, password required', 'error');
+      try {
+        await api('/api/residents', { method: 'POST', body: JSON.stringify({ name: name, apartment: apartment, phone: phone, email: email, password: password, is_admin: is_admin }) });
+        closeModal();
+        loadResidents();
+        loadQRCodes();
+        toast('Resident added');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function showEditResident(id) {
+      var residents = await api('/api/residents');
+      var r = residents.find(function(x) { return x.id === id; });
+      if (!r) return;
+      document.getElementById('modal-root').innerHTML =
+        '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">' +
+        '<div class="modal">' +
+          '<h2>Edit ' + esc(r.name) + '</h2>' +
+          '<div class="form-group"><label>Name</label><input id="m-name" value="' + esc(r.name) + '"></div>' +
+          '<div class="form-group"><label>Apartment</label><input id="m-apt" value="' + esc(r.apartment) + '"></div>' +
+          '<div class="form-group"><label>Phone</label><input id="m-phone" value="' + esc(r.phone || '') + '"></div>' +
+          '<div class="form-group"><label>Email</label><input id="m-email" type="email" value="' + esc(r.email) + '"></div>' +
+          '<div class="form-group"><label>New Password (leave blank to keep)</label><input id="m-pass" type="password" placeholder="Unchanged"></div>' +
+          '<div class="form-group"><label><input type="checkbox" id="m-admin" ' + (r.is_admin ? 'checked' : '') + '> Admin</label></div>' +
+          '<div class="modal-actions">' +
+            '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>' +
+            '<button class="btn btn-primary" onclick="updateResident(\'' + id + '\')">Save</button>' +
+          '</div>' +
+        '</div></div>';
+    }
+
+    async function updateResident(id) {
+      var name = document.getElementById('m-name').value;
+      var apartment = document.getElementById('m-apt').value;
+      var phone = document.getElementById('m-phone').value;
+      var email = document.getElementById('m-email').value;
+      var password = document.getElementById('m-pass').value;
+      var is_admin = document.getElementById('m-admin').checked;
+      if (!name || !apartment || !email) return toast('Name, apt, email required', 'error');
+      try {
+        var body = { name: name, apartment: apartment, phone: phone, email: email, is_admin: is_admin };
+        if (password) body.password = password;
+        await api('/api/residents/' + id, { method: 'PUT', body: JSON.stringify(body) });
+        closeModal();
+        loadResidents();
+        loadQRCodes();
+        toast('Resident updated');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function deleteResident(id, name) {
+      if (!confirm('Delete ' + name + '?')) return;
+      try {
+        await api('/api/residents/' + id, { method: 'DELETE' });
+        loadResidents();
+        loadQRCodes();
+        toast('Resident deleted');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function viewQR(id) {
+      try {
+        var data = await api('/api/residents/' + id + '/qr');
+        document.getElementById('modal-root').innerHTML =
+          '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">' +
+          '<div class="modal" style="text-align:center">' +
+            '<h2>' + esc(data.resident.name) + ' - QR Code</h2>' +
+            '<div style="color:var(--text-dim);margin-bottom:12px">Apartment ' + esc(data.resident.apartment) + '</div>' +
+            '<img src="' + data.qr + '" style="max-width:300px;background:white;padding:12px;border-radius:8px">' +
+            '<p style="margin-top:12px;font-size:0.8rem;color:var(--text-dim);word-break:break-all">' + data.url + '</p>' +
+            '<div class="modal-actions">' +
+              '<button class="btn btn-primary" onclick="window.open(\'' + data.url + '\',\'_blank\')">Open Call Page</button>' +
+              '<button class="btn btn-ghost" onclick="closeModal()">Close</button>' +
+            '</div>' +
+          '</div></div>';
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    function showAddGate() {
+      document.getElementById('modal-root').innerHTML =
+        '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">' +
+        '<div class="modal">' +
+          '<h2>Add Gate</h2>' +
+          '<div class="form-group"><label>Name</label><input id="g-name" placeholder="e.g. Front Gate"></div>' +
+          '<div class="form-group"><label>Location</label><input id="g-loc" placeholder="e.g. Main entrance"></div>' +
+          '<div class="modal-actions">' +
+            '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>' +
+            '<button class="btn btn-primary" onclick="addGate()">Add</button>' +
+          '</div>' +
+        '</div></div>';
+    }
+
+    async function addGate() {
+      var name = document.getElementById('g-name').value;
+      var location = document.getElementById('g-loc').value;
+      if (!name) return;
+      try {
+        await api('/api/gates', { method: 'POST', body: JSON.stringify({ name: name, location: location }) });
+        closeModal();
+        loadGates();
+        toast('Gate added');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function deleteGate(id) {
+      if (!confirm('Delete this gate?')) return;
+      try {
+        await api('/api/gates/' + id, { method: 'DELETE' });
+        loadGates();
+        toast('Gate deleted');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    // Only try to restore a session; without a token this would just log a 401.
+    if (token) loadDashboard();
+  </script>
+</body>
+</html>

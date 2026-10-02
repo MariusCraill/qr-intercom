@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Intercom - Test</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .test-container { max-width: 800px; margin: 0 auto; padding: 24px; }
+    .section { margin-bottom: 24px; }
+    .log {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      max-height: 300px;
+      overflow-y: auto;
+      color: var(--text-dim);
+    }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(71,85,105,0.3); }
+    .log-entry.info { color: #93c5fd; }
+    .log-entry.success { color: #86efac; }
+    .log-entry.error { color: #fca5a5; }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      display: inline-block; margin-right: 6px;
+    }
+    .status-dot.connected { background: var(--success); }
+    .status-dot.disconnected { background: var(--danger); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>QR Intercom - Test Page</h1>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/test" class="active">Test</a>
+    </nav>
+  </header>
+
+  <div class="test-container">
+    <div class="card section">
+      <h2>Connection Status</h2>
+      <p><span class="status-dot" id="ws-status"></span> WebSocket: <span id="ws-status-text">Connecting...</span></p>
+    </div>
+
+    <div class="card section">
+      <h2>Camera & Microphone Test</h2>
+      <div style="display:flex;gap:12px;margin-bottom:12px">
+        <button class="btn btn-primary btn-sm" onclick="testMedia()">Test Camera/Mic</button>
+        <button class="btn btn-ghost btn-sm" onclick="stopMedia()">Stop</button>
+      </div>
+      <video id="test-video" autoplay muted playsinline style="max-width:100%;border-radius:8px;display:none"></video>
+      <div id="media-status" style="margin-top:8px;font-size:0.85rem;color:var(--text-dim)"></div>
+    </div>
+
+    <div class="card section">
+      <h2>Simulate Gate Call</h2>
+      <div class="form-group">
+        <label>Gate ID</label>
+        <input id="test-gate-id" placeholder="Enter gate ID or leave empty for first gate">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="simulateCall()">Simulate Incoming Call</button>
+    </div>
+
+    <div class="card section">
+      <h2>Event Log</h2>
+      <div class="log" id="event-log"></div>
+      <button class="btn btn-ghost btn-sm" onclick="clearLog()" style="margin-top:8px">Clear Log</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const log = document.getElementById('event-log');
+
+    function addLog(msg, type = '') {
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${time}] ${msg}`;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function clearLog() { log.innerHTML = ''; }
+
+    socket.on('connect', () => {
+      document.getElementById('ws-status').className = 'status-dot connected';
+      document.getElementById('ws-status-text').textContent = 'Connected';
+      addLog('WebSocket connected', 'success');
+    });
+
+    socket.on('disconnect', () => {
+      document.getElementById('ws-status').className = 'status-dot disconnected';
+      document.getElementById('ws-status-text').textContent = 'Disconnected';
+      addLog('WebSocket disconnected', 'error');
+    });
+
+    socket.on('call:incoming', (data) => {
+      addLog(`Incoming call: ${JSON.stringify(data)}`, 'info');
+    });
+
+    socket.on('call:answered', (data) => {
+      addLog(`Call answered: ${JSON.stringify(data)}`, 'success');
+    });
+
+    socket.on('call:ended', (data) => {
+      addLog(`Call ended: ${JSON.stringify(data)}`, 'info');
+    });
+
+    socket.on('gate:status', (data) => {
+      addLog(`Gate status: ${JSON.stringify(data)}`, 'info');
+    });
+
+    let testStream = null;
+
+    async function testMedia() {
+      try {
+        testStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const video = document.getElementById('test-video');
+        video.srcObject = testStream;
+        video.style.display = 'block';
+        document.getElementById('media-status').textContent = 'Camera and microphone working!';
+        document.getElementById('media-status').style.color = 'var(--success)';
+        addLog('Camera/mic test passed', 'success');
+      } catch (e) {
+        document.getElementById('media-status').textContent = `Error: ${e.message}`;
+        document.getElementById('media-status').style.color = 'var(--danger)';
+        addLog(`Media error: ${e.message}`, 'error');
+      }
+    }
+
+    function stopMedia() {
+      if (testStream) {
+        testStream.getTracks().forEach(t => t.stop());
+        testStream = null;
+        document.getElementById('test-video').style.display = 'none';
+        document.getElementById('media-status').textContent = 'Media stopped';
+        addLog('Media stopped', 'info');
+      }
+    }
+
+    async function simulateCall() {
+      const gateId = document.getElementById('test-gate-id').value.trim();
+      let id = gateId;
+      if (!id) {
+        try {
+          const res = await fetch('/api/gates', { headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } });
+          const gates = await res.json();
+          if (gates.length) id = gates[0].id;
+        } catch {}
+      }
+      if (!id) { addLog('No gate ID available', 'error'); return; }
+      socket.emit('call:request', { gateId: id, visitorId: 'test-visitor' });
+      addLog(`Simulated call from gate: ${id}`, 'info');
+    }
+
+    addLog('Test page loaded', 'info');
+  </script>
+</body>
+</html>
