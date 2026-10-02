@@ -53,4 +53,5 @@ jobs:
           cache-dependency-path: ${{ matrix.project }}/package-lock.json
       # npm ci fails if a lockfile has drifted out of sync with its package.json.
       - name: npm ci
+        run: npm ci
         working-directory: ${{ matrix.project }}
