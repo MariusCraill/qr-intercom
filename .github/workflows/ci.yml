@@ -28,10 +28,12 @@ jobs:
           set -euo pipefail
           base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
           asset="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL "${base}/${asset}" -o gitleaks.tar.gz
+          # Keep the release filename: sha256sum --check resolves the path from the
+          # checksums file, so a renamed download cannot be verified.
+          curl -sSfL "${base}/${asset}" -o "${asset}"
           curl -sSfL "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o checksums.txt
           grep " ${asset}\$" checksums.txt | sha256sum --check --strict
-          tar -xzf gitleaks.tar.gz gitleaks
+          tar -xzf "${asset}" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
       - name: Scan every commit
         run: |
