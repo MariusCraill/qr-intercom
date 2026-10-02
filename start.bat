@@ -74,9 +74,14 @@ if not exist "%LOCAL%\node_modules" (
 )
 
 if not exist "%LOCAL%\.env" (
-    echo [INFO] Creating .env from .env.example
-    copy "%LOCAL%\.env.example" "%LOCAL%\.env" >nul
-    echo [WARN] Change JWT_SECRET in %LOCAL%\.env before using this anywhere real.
+    echo [INFO] Creating .env from .env.example with a random JWT_SECRET
+    node -e "const fs=require('fs'),c=require('crypto');fs.writeFileSync(process.argv[1],fs.readFileSync(process.argv[2],'utf8').replace(/^JWT_SECRET=.*$/m,'JWT_SECRET='+c.randomBytes(32).toString('hex')))" "%LOCAL%\.env" "%LOCAL%\.env.example"
+    if errorlevel 1 (
+        echo [ERROR] Could not create .env
+        pause
+        exit /b 1
+    )
+    echo [OK]   JWT_SECRET generated and stored in .env
     echo.
 )
 

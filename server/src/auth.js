@@ -1,7 +1,39 @@
 const jwt = require('jsonwebtoken');
 const { getOne } = require('./db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+// A missing or predictable signing key lets anyone who has read this source mint a
+// valid session for any user, admin included. Refuse to boot rather than fall back
+// to a known value.
+const PLACEHOLDER_SECRETS = new Set([
+  'dev-secret',
+  'secret',
+  'changeme',
+  'change-me-to-a-real-secret-in-production'
+]);
+
+const GENERATE_HINT =
+  'Generate one and put it in server/.env:\n' +
+  '    node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"';
+
+function resolveJwtSecret() {
+  const secret = (process.env.JWT_SECRET || '').trim();
+
+  if (!secret) {
+    throw new Error(`JWT_SECRET is not set. ${GENERATE_HINT}`);
+  }
+
+  if (PLACEHOLDER_SECRETS.has(secret.toLowerCase())) {
+    throw new Error(`JWT_SECRET is still the placeholder from .env.example. ${GENERATE_HINT}`);
+  }
+
+  if (secret.length < 32) {
+    throw new Error(`JWT_SECRET is too short (${secret.length} chars, need 32+). ${GENERATE_HINT}`);
+  }
+
+  return secret;
+}
+
+const JWT_SECRET = resolveJwtSecret();
 const TOKEN_TTL = process.env.TOKEN_TTL || '7d';
 
 // ---------- brute force protection ----------

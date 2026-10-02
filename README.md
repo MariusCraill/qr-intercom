@@ -48,7 +48,7 @@ worth knowing:
 | ------------------ | ----------------------- | -------------------------------------------------- |
 | `PORT`             | `3100`                  | HTTP port                                           |
 | `HTTPS_PORT`       | `3143`                  | **Use this for calls** — browsers block camera on plain HTTP other than localhost |
-| `JWT_SECRET`       | `change-me-...`         | Generate a real one: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `JWT_SECRET`       | —                        | **Required.** The server refuses to boot on an empty, placeholder or under-32-char value. `start.bat` generates one on first run; by hand: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `MQTT_BROKER`      | `mqtt://localhost:1883` | Broker URL, including credentials if required        |
 | `DB_PATH`          | `C:/qr-intercom-data/…` | SQLite file                                         |
 | `PUBLIC_BASE_URL`  | derived from request    | Set explicitly behind a proxy so QR codes point at the right host |
@@ -72,14 +72,30 @@ warning does not come back after a server restart.
 
 This is built for a private LAN. Before exposing it to the internet:
 
-- Set a real `JWT_SECRET`.
+- `JWT_SECRET` is mandatory. There is no built-in fallback — an empty, placeholder
+  or under-32-character value aborts the boot with instructions, because a
+  predictable signing key lets anyone mint an admin session.
 - Put it behind a reverse proxy with a trusted certificate instead of relying on
   the self-signed one.
 - Set `COOKIE_SECURE=true` and narrow `CORS_ORIGIN` from `*`.
 - Only the admin account may open doors — keep its password strong.
 
 Secrets, databases, TLS keys and `node_modules/` are all excluded by
-`.gitignore`. Only `.env.example` files are committed.
+`.gitignore`. Only `.env.example` files are committed, and CI runs
+[gitleaks](https://github.com/gitleaks/gitleaks) over every push so a leaked key
+fails the build instead of reaching the public history.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+| Job         | What it catches                                                        |
+| ----------- | ---------------------------------------------------------------------- |
+| Secret scan | `.env`, keys or tokens committed, including in existing history        |
+| Syntax      | A file that does not parse, on Node 20 and 22                          |
+| Install     | A `package-lock.json` that has drifted out of sync with its `package.json` |
+
+There is no test suite yet, so nothing asserts application behaviour.
 
 ## agent-app
 
