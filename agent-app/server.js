@@ -1,5 +1,10 @@
 const path = require('path');
+// Load .env before anything reads process.env, and from this folder rather than
+// whatever directory the process happened to be started from.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
 const { loadConfig, saveConfig, DATA_DIR } = require('./src/config');
@@ -8,20 +13,25 @@ const { search } = require('./src/websearch');
 const { parseDocument } = require('./src/documents');
 const graph = require('./src/graph');
 
-require('dotenv').config();
-
-require('dotenv').config();
-
 const app = express();
 const PORT = parseInt(process.env.PORT) || 3410;
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_UPLOAD_MB = parseInt(process.env.MAX_UPLOAD_MB) || 20;
 const MAX_DOC_CHARS = parseInt(process.env.MAX_DOC_CHARS) || 60000;
-const MAX_DOCS = 20;
+const MAX_DOCS = parseInt(process.env.MAX_DOCS) || 20;
+
+// Every /api route reads your calendar, notes or documents or spends LLM credit,
+// and any web page you visit can send requests to localhost. Without a token
+// there is nothing to tell this UI apart from such a page.
+const AGENT_TOKEN = (process.env.AGENT_TOKEN || '').trim();
+if (!AGENT_TOKEN) {
+  console.error('AGENT_TOKEN is not set. Generate one and put it in agent-app/.env:\n' +
+    '    node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  process.exit(1);
+}
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // This app holds API keys and a Microsoft account password, so it stays off the LAN.
@@ -57,31 +67,45 @@ function pruneDocuments() {
   }
 }
 
-// ---------- Config ----------
-// Requires AGENT_TOKEN in .env; the endpoint can otherwise overwrite prefs.
-function requireToken(req, res, next) {
-  const expected = process.env.AGENT_TOKEN;
-  if (!expected) {
-    return res.status(503).json({ error: 'Set AGENT_TOKEN in .env to enable config changes' });
-  }
-  const provided = req.headers['x-agent-token'] || req.query.token;
-  if (provided !== expected) return res.status(401).json({ error: 'Invalid agent token' });
-  next();
+// ---------- Auth ----------
+// A custom header also means a cross-site form or <img> can never authenticate,
+// because browsers will not attach it without a CORS preflight we never grant.
+function tokenMatches(provided) {
+  const a = Buffer.from(String(provided || ''));
+  const b = Buffer.from(AGENT_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+app.use('/api', (req, res, next) => {
+  if (!tokenMatches(req.headers['x-agent-token'])) {
+    return res.status(401).json({ error: 'Invalid agent token' });
+  }
+  next();
+});
+
+function clampInt(value, fallback, min, max) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+// ---------- Config ----------
 app.get('/api/config/meta', (req, res) => {
   const cfg = loadConfig();
   res.json({
     webSearch: cfg.webSearch,
     hasLlmKey: !!cfg.apiKey,
     hasBaseUrl: !!cfg.baseUrl,
+    baseUrl: cfg.baseUrl || '',
+    provider: cfg.provider || '',
+    msTenantId: cfg.msTenantId || '',
+    msClientId: cfg.msClientId || '',
     model: cfg.model,
     hasTavily: !!cfg.tavilyApiKey,
     hasMsAuth: !!(cfg.msClientId && (cfg.msClientSecret || (cfg.msUsername && cfg.msPassword)))
   });
 });
 
-app.post('/api/config', requireToken, (req, res) => {
+app.post('/api/config', (req, res) => {
   try {
     saveConfig(req.body || {});
     res.json({ ok: true });
@@ -137,7 +161,7 @@ app.get('/api/calendar', async (req, res) => {
     const events = await graph.getCalendarEvents(cfg, {
       start: req.query.start,
       end: req.query.end,
-      top: Number(req.query.top || 30)
+      top: clampInt(req.query.top, 30, 1, 100)
     });
     res.json(events);
   } catch (e) {
@@ -166,7 +190,7 @@ app.get('/api/notebooks/:id/sections', async (req, res) => {
 app.get('/api/sections/:id/pages', async (req, res) => {
   try {
     const cfg = loadConfig();
-    res.json(await graph.getPages(cfg, req.params.id, Number(req.query.top || 20)));
+    res.json(await graph.getPages(cfg, req.params.id, clampInt(req.query.top, 20, 1, 100)));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -214,7 +238,7 @@ async function buildContext(cfg, body) {
     const noteParts = [];
     for (const n of body.notes) {
       try {
-        const { content } = await graph.getPageContent(cfg, n.id);
+        const content = await graph.getPageContent(cfg, n.id);
         noteParts.push(`--- Note: ${n.title || n.id} ---\n${content}`);
       } catch (e) {
         noteParts.push(`--- Note: ${n.title || n.id} ---\n(unavailable: ${e.message})`);
@@ -235,9 +259,9 @@ async function buildContext(cfg, body) {
 
   // Web search
   let webResults = null;
-  if (body.useInternet) {
+  if (body.useInternet && cfg.webSearch !== 'none') {
     try {
-      webResults = await search(cfg, body.query, 5);
+      webResults = await search(cfg, body.message, 5);
       if (webResults && webResults.length) {
         const lines = webResults.map((r, i) => `${i + 1}. ${r.title}\n   URL: ${r.url}\n   ${r.snippet || ''}`);
         parts.push(`=== WEB SEARCH RESULTS ===\n${lines.join('\n')}`);

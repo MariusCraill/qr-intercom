@@ -12,11 +12,33 @@ const state = {
 };
 
 // ---------- helpers ----------
-async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
-    ...opts
-  });
+// Every /api call needs the AGENT_TOKEN from .env; it is asked for once and kept
+// in this browser only.
+const TOKEN_KEY = 'agent_token';
+
+function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+}
+
+function setToken(token) {
+  try { localStorage.setItem(TOKEN_KEY, token); } catch (e) { /* private mode */ }
+}
+
+async function api(path, opts = {}, retried = false) {
+  const headers = { ...(opts.headers || {}) };
+  // FormData must set its own multipart Content-Type (with the boundary).
+  if (typeof opts.body === 'string') headers['Content-Type'] = 'application/json';
+  const token = getToken();
+  if (token) headers['X-Agent-Token'] = token;
+
+  const res = await fetch(path, { ...opts, headers });
+  if (res.status === 401 && !retried) {
+    const entered = (window.prompt('Enter the AGENT_TOKEN from agent-app/.env') || '').trim();
+    if (entered) {
+      setToken(entered);
+      return api(path, opts, true);
+    }
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try { msg = (await res.json()).error || msg; } catch (e) {}
@@ -43,14 +65,15 @@ $('#sourceToggle').addEventListener('click', (e) => {
 // ---------- settings ----------
 // Secrets are deliberately not accepted here: the server strips them so they
 // can never land in data/config.json. Set them in .env instead.
-const TOKEN_KEY = 'agent_token';
-
 async function loadSettings() {
   try {
     const meta = await api('/api/config/meta');
     $('#cfgWebSearch').value = meta.webSearch || 'duckduckgo';
     if (meta.model) $('#cfgModel').value = meta.model;
-    if (meta.hasBaseUrl) $('#cfgBaseUrl').value = meta.baseUrl || '';
+    $('#cfgBaseUrl').value = meta.baseUrl || '';
+    if (meta.provider) $('#cfgProvider').value = meta.provider;
+    if (meta.msTenantId) $('#cfgTenantId').value = meta.msTenantId;
+    if (meta.msClientId) $('#cfgClientId').value = meta.msClientId;
     const bits = [];
     if (meta.hasLlmKey) bits.push('LLM key ✔');
     if (meta.hasTavily) bits.push('Tavily ✔');
@@ -64,12 +87,11 @@ async function loadSettings() {
 $('#saveConfigBtn').addEventListener('click', async () => {
   const status = $('#configStatus');
   try {
-    const token = ($('#cfgToken').value || localStorage.getItem(TOKEN_KEY) || '').trim();
-    if (token) localStorage.setItem(TOKEN_KEY, token);
+    const token = $('#cfgToken').value.trim();
+    if (token) setToken(token);
 
     await api('/api/config', {
       method: 'POST',
-      headers: token ? { 'X-Agent-Token': token } : {},
       body: JSON.stringify({
         provider: $('#cfgProvider').value,
         baseUrl: $('#cfgBaseUrl').value.trim(),
@@ -145,7 +167,6 @@ async function loadNotebooks() {
     sel.innerHTML = '<option value="">Note: ' + err.message + '</option>';
   }
 }
-loadNotebooks();
 
 $('#notebookSelect').addEventListener('change', async (e) => {
   const nb = e.target.value;
@@ -254,7 +275,6 @@ function renderDocs() {
     container.appendChild(item);
   });
 }
-loadDocs();
 
 // ---------- context bar ----------
 function updateCtxBar() {
@@ -326,6 +346,11 @@ input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#chatForm').requestSubmit(); }
 });
 
-loadSettings();
+// Settings first, so a missing token is asked for once rather than by every loader.
+(async () => {
+  await loadSettings();
+  loadNotebooks();
+  loadDocs();
+})();
 updateCtxBar();
 addMsg('assistant', 'Welcome! Configure your model + Microsoft in Settings, then load your calendar and notes, drag in any documents, pick your sources (or toggle Internet on), and ask away.');
