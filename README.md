@@ -53,17 +53,22 @@ worth knowing:
 | `DB_PATH`          | `C:/qr-intercom-data/…` | SQLite file                                         |
 | `PUBLIC_BASE_URL`  | derived from request    | Set explicitly behind a proxy so QR codes point at the right host |
 | `COOKIE_SECURE`    | `false`                 | Set `true` once HTTPS is your normal path            |
-| `ADMIN_PASSWORD`   | generated               | Initial password for a new database. Left blank, a random one is printed to the console on first boot |
+| `ADMIN_USERNAME`   | `admin`                 | Admin login for a new database                      |
+| `ADMIN_PASSWORD`   | generated               | Initial admin password for a new database. Left blank, a random one is printed to the console on first boot |
 | `ALLOW_REGISTRATION` | `false`               | Opens `/api/auth/register` to anyone. Residents can open gates, so keep it off unless the network is trusted |
 
 ## First sign-in
 
-On a brand-new database the server seeds an admin (`admin@demo.com`), a few demo
-residents and two gates, and prints the password once:
+On a brand-new database the server seeds an admin (username `admin`, or
+`ADMIN_USERNAME`), a few demo residents and two gates. The admin password is
+`ADMIN_PASSWORD` from `.env`, or a random one printed once:
 
 ```
-[DB] Demo data seeded. Sign in as admin@demo.com with password: <random>
+[DB] Demo data seeded. Sign in as "admin" with password: <random>
 ```
+
+The demo residents get their own random password, printed on the next line, so
+a password set in `.env` is never shared with accounts that can open gates.
 
 Older versions seeded every account with the password `admin`. If the console
 warns that accounts still use it, change or delete them from the dashboard.

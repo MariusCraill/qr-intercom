@@ -62,7 +62,7 @@
     <div id="login-view">
       <div class="card login-box">
         <h2>Resident Login</h2>
-        <div class="form-group"><label>Email</label><input type="email" id="login-email"></div>
+        <div class="form-group"><label>Email or username</label><input type="text" id="login-email" autocomplete="username" autocapitalize="none"></div>
         <div class="form-group"><label>Password</label><input type="password" id="login-password"></div>
         <button class="btn btn-primary" onclick="login()" style="margin-top:12px">Login</button>
         <p id="login-error" style="color:var(--danger);margin-top:8px;font-size:0.85rem"></p>
