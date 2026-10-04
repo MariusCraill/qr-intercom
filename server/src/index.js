@@ -6,6 +6,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
 
 const { initDatabase, flushDatabase } = require('./db');
@@ -35,7 +36,7 @@ function getLocalIP() {
   return fallback || '127.0.0.1';
 }
 
-function banner(localIP) {
+function banner(localIP, certFingerprint) {
   const lines = [
     '',
     '========================================',
@@ -47,6 +48,8 @@ function banner(localIP) {
     `  Dashboard: http://${localIP}:${PORT}/`,
     `  Resident:  http://${localIP}:${PORT}/resident/`,
     `  Gate:      http://${localIP}:${PORT}/gate/<gateId>`,
+    // The Android app shows this on first connect so it can be checked by eye.
+    ...(certFingerprint ? ['', '  HTTPS certificate SHA-256:', `  ${certFingerprint}`] : []),
     '========================================',
     ''
   ];
@@ -187,8 +190,11 @@ async function start() {
 
   // HTTPS is optional; HTTP is the source of truth for readiness.
   let httpsServer = null;
+  let certFingerprint = null;
   try {
-    httpsServer = https.createServer(loadOrCreateCert(localIP), app);
+    const tls = loadOrCreateCert(localIP);
+    httpsServer = https.createServer(tls, app);
+    certFingerprint = new crypto.X509Certificate(tls.cert).fingerprint256;
   } catch (err) {
     console.warn('[HTTPS] Disabled:', err.message);
   }
@@ -205,7 +211,7 @@ async function start() {
     }
   }
 
-  banner(localIP);
+  banner(localIP, httpsServer && httpsServer.listening ? certFingerprint : null);
   STARTED_AT = new Date().toISOString();
   console.log(`[SRV] Ready after ${((Date.now() - BOOTED_AT) / 1000).toFixed(1)}s\n`);
 

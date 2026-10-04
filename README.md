@@ -12,6 +12,7 @@ answers questions using your calendar, notes and uploaded documents.
 | ------------- | ----------------------------------------------------------------- |
 | `server/`     | Intercom server: dashboard, resident app, gate kiosk, WebRTC, MQTT |
 | `agent-app/`  | Separate personal agent (LLM chat, documents, Microsoft Graph)     |
+| `android/`    | Resident app for Android: the resident page with camera/mic, no browser needed |
 | `start.bat`   | Windows launcher that boots the intercom server and opens the UI  |
 
 ## Requirements
@@ -117,8 +118,32 @@ fails the build instead of reaching the public history.
 | Secret scan | `.env`, keys or tokens committed, including in existing history        |
 | Syntax      | A file that does not parse, on Node 20 and 22                          |
 | Install     | A `package-lock.json` that has drifted out of sync with its `package.json` |
+| Android APK | The Android app no longer builds                                      |
 
 There is no test suite yet, so nothing asserts application behaviour.
+
+## Android app
+
+`android/` is a small app that opens the resident page (`/resident/`) and gives it the
+camera and microphone. On first launch it asks for the server's HTTPS address, e.g.
+`https://192.168.1.20:3143`; change it later from the menu.
+
+The server's certificate is self-signed, so the first time you connect the app shows
+its SHA-256 fingerprint. Compare it with the one in the server's startup banner, then
+tap **Trust**. From then on the app accepts only that certificate. If it ever changes,
+the app warns you instead of connecting silently.
+
+Build it without Android Studio or Gradle (Ubuntu/Debian):
+
+```bash
+sudo apt-get install android-sdk android-sdk-platform-23 dalvik-exchange
+android/build.sh            # -> android/build/intercom.apk
+```
+
+The first build creates `android/intercom.keystore`. Keep it: Android only installs
+an update over an existing app when both are signed with the same key. Both the key
+and the APK are gitignored. The app runs on Android 6 and newer. Calls only ring
+while the app is open; it has no background notifications.
 
 ## agent-app
 
