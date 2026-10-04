@@ -22,7 +22,7 @@ async function chat(cfg, messages, { temperature = 0.4 } = {}) {
     messages,
     temperature
   });
-  return resp.choices[0].message.content || '';
+  return resp.choices?.[0]?.message?.content || '';
 }
 
 module.exports = { chat, resolveModel };

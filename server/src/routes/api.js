@@ -28,8 +28,8 @@ function getBaseUrl(req) {
   if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, '');
   const host = req.headers.host;
   if (!host || !/^[A-Za-z0-9.\-]+(:\d{1,5})?$/.test(host)) return null;
-  const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-  return `${protocol}://${host}`;
+  // req.protocol only honours X-Forwarded-Proto when TRUST_PROXY is on.
+  return `${req.protocol}://${host}`;
 }
 
 function publicUser(u) {
@@ -61,7 +61,12 @@ router.post('/auth/login', loginRateLimit, async (req, res) => {
   res.json({ token, user: publicUser(user) });
 });
 
+// Any resident can answer a gate call and open the door, so open self-registration
+// would let anyone on the network let themselves in. Admins add residents instead.
 router.post('/auth/register', loginRateLimit, async (req, res) => {
+  if (process.env.ALLOW_REGISTRATION !== 'true') {
+    return res.status(403).json({ error: 'Self-registration is disabled. Ask the building admin for an account.' });
+  }
   const { name, apartment, phone, email, password } = req.body || {};
   if (!name || !apartment || !email || !password) {
     return res.status(400).json({ error: 'Name, apartment, email, and password required' });
@@ -70,6 +75,7 @@ router.post('/auth/register', loginRateLimit, async (req, res) => {
   if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
   if (getOne('SELECT id FROM residents WHERE email = ?', [email])) {
+    registerFailedLogin(req); // also throttles probing for registered emails
     return res.status(409).json({ error: 'Email already registered' });
   }
 
@@ -239,7 +245,7 @@ router.delete('/gates/:id', authMiddleware, requireAdmin, (req, res) => {
 
 // Public gate metadata for the kiosk page (no secrets, no MQTT topics).
 router.get('/public/gates/:id', (req, res) => {
-  const gate = getOne('SELECT id, name, location FROM gates WHERE id = ?', [req.params.gateId || req.params.id]);
+  const gate = getOne('SELECT id, name, location FROM gates WHERE id = ?', [req.params.id]);
   if (!gate) return res.status(404).json({ error: 'Gate not found' });
   res.json(gate);
 });

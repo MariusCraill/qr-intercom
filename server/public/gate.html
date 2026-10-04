@@ -189,10 +189,17 @@
       socket.emit('call:request', { gateId, visitorId });
     }
 
-    socket.on('call:incoming', (data) => {
+    // The server answers the ringing socket directly; call:incoming only goes to residents.
+    socket.on('call:requested', (data) => {
       if (data.gateId === gateId && !callId) {
         callId = data.callId;
+        document.getElementById('status-text').textContent = 'Ringing...';
       }
+    });
+
+    socket.on('call:error', (data) => {
+      document.getElementById('status-text').textContent = data.error || 'Call failed';
+      resetUI();
     });
 
     socket.on('call:answered', async (data) => {

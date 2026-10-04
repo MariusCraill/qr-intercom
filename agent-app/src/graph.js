@@ -71,17 +71,17 @@ async function getNotebooks(cfg) {
 }
 
 async function getSections(cfg, notebookId) {
-  const data = await graphFetch(cfg, `/me/onenote/notebooks/${notebookId}/sections?$select=id,displayName&$top=100`);
+  const data = await graphFetch(cfg, `/me/onenote/notebooks/${encodeURIComponent(notebookId)}/sections?$select=id,displayName&$top=100`);
   return (data.value || []).map((s) => ({ id: s.id, displayName: s.displayName, notebookId }));
 }
 
 async function getPages(cfg, sectionId, top = 20) {
-  const data = await graphFetch(cfg, `/me/onenote/sections/${sectionId}/pages?$select=id,title,createdDateTime&$top=${top}`);
+  const data = await graphFetch(cfg, `/me/onenote/sections/${encodeURIComponent(sectionId)}/pages?$select=id,title,createdDateTime&$top=${top}`);
   return (data.value || []).map((p) => ({ id: p.id, title: p.title, createdDateTime: p.createdDateTime, sectionId }));
 }
 
 async function getPageContent(cfg, pageId) {
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/onenote/pages/${pageId}/content`, {
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}/content`, {
     headers: { Authorization: `Bearer ${await getToken(cfg)}`, Accept: 'text/html' }
   });
   if (!res.ok) throw new Error(`Graph page content error ${res.status}`);

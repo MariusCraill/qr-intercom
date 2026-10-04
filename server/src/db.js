@@ -87,12 +87,23 @@ function seedDemoData() {
   const { v4: uuid } = require('uuid');
 
   const existing = getOne('SELECT id FROM residents LIMIT 1');
-  if (existing) return;
+  if (existing) {
+    warnIfDefaultPassword(bcrypt);
+    return;
+  }
 
-  const pw = bcrypt.hashSync('admin', 10);
+  // A fixed, published password would let anyone who has read this repo log in
+  // and open the gates, so every fresh install gets its own.
+  const randomPassword = () => require('crypto').randomBytes(9).toString('base64url');
+  const adminLogin = (process.env.ADMIN_USERNAME || '').trim() || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD || randomPassword();
+  // The demo residents can unlock gates too, so they never share a password set in .env.
+  const demoPassword = randomPassword();
+  const adminHash = bcrypt.hashSync(adminPassword, 10);
+  const demoHash = bcrypt.hashSync(demoPassword, 10);
 
   const residents = [
-    { name: 'Admin', apartment: '1', email: 'admin@demo.com', phone: '555-0100', is_admin: 1 },
+    { name: 'Admin', apartment: '1', email: adminLogin, phone: '555-0100', is_admin: 1 },
     { name: 'Alice Johnson', apartment: '2A', email: 'alice@demo.com', phone: '555-0101', is_admin: 0 },
     { name: 'Bob Smith', apartment: '3B', email: 'bob@demo.com', phone: '555-0102', is_admin: 0 },
     { name: 'Carol White', apartment: '4C', email: 'carol@demo.com', phone: '555-0103', is_admin: 0 },
@@ -102,7 +113,7 @@ function seedDemoData() {
   for (const r of residents) {
     db.run(
       'INSERT INTO residents (id, name, apartment, phone, email, password, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [uuid(), r.name, r.apartment, r.phone, r.email, pw, r.is_admin]
+      [uuid(), r.name, r.apartment, r.phone, r.email, r.is_admin ? adminHash : demoHash, r.is_admin]
     );
   }
 
@@ -117,7 +128,23 @@ function seedDemoData() {
     [gateId2, 'Parking Gate', 'Underground parking', 'gates/' + gateId2 + '/command']
   );
 
-  console.log('[DB] Demo data seeded (password: admin for all accounts)');
+  if (process.env.ADMIN_PASSWORD) {
+    console.log(`[DB] Demo data seeded. Sign in as "${adminLogin}" with ADMIN_PASSWORD from .env.`);
+  } else {
+    console.log(`[DB] Demo data seeded. Sign in as "${adminLogin}" with password:`, adminPassword);
+  }
+  console.log('[DB] Demo residents (alice@demo.com etc.) share the password:', demoPassword);
+}
+
+// Databases seeded by older versions used the password "admin" for every account.
+function warnIfDefaultPassword(bcrypt) {
+  const weak = getAll("SELECT email, password FROM residents WHERE email LIKE '%@demo.com' OR email = 'admin'")
+    .filter((r) => bcrypt.compareSync('admin', r.password))
+    .map((r) => r.email);
+  if (weak.length) {
+    console.warn(`[DB] WARNING: these accounts still use the password "admin": ${weak.join(', ')}`);
+    console.warn('[DB]          Anyone who knows it can open the gates. Change them in the dashboard.');
+  }
 }
 
 function getDb() {
@@ -131,9 +158,13 @@ function getDb() {
 let saveTimer = null;
 let dirty = false;
 
+// Write to a temp file and rename it over the old one, so a crash or power cut
+// mid-write leaves the previous database intact instead of a truncated file.
 function writeToDisk() {
   if (!db) return;
-  fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+  const tmp = `${DB_PATH}.tmp`;
+  fs.writeFileSync(tmp, Buffer.from(db.export()));
+  fs.renameSync(tmp, DB_PATH);
 }
 
 function saveDatabase() {
@@ -163,11 +194,12 @@ function flushDatabase() {
   }
 }
 
-for (const sig of ['SIGINT', 'SIGTERM', 'exit']) {
-  process.on(sig, () => {
-    try { flushDatabase(); } catch { /* nothing left to do */ }
-  });
-}
+// Only 'exit' here: a SIGINT/SIGTERM listener would stop Node's default
+// behaviour of exiting, so Ctrl+C did nothing until index.js finished booting.
+// index.js installs the signal handlers and they exit through this one.
+process.on('exit', () => {
+  try { flushDatabase(); } catch { /* nothing left to do */ }
+});
 
 // ---------- query helpers ----------
 function run(sql, params = []) {

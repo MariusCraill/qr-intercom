@@ -74,7 +74,8 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    // Authenticate with the dashboard's token so call events are visible here too.
+    const socket = io({ auth: { token: localStorage.getItem('token') || undefined } });
     const log = document.getElementById('event-log');
 
     function addLog(msg, type = '') {

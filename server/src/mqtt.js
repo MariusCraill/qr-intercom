@@ -53,7 +53,8 @@ function initMQTT(socketIo) {
     if (parts.length === 3 && parts[0] === 'gates' && parts[2] === 'status') {
       const gateId = parts[1];
       const status = message.toString();
-      if (io) io.emit('gate:status', { gateId, status });
+      // Residents and the dashboard only; anonymous kiosk/visitor sockets don't need it.
+      if (io) io.to('residents').emit('gate:status', { gateId, status });
     }
   });
 
@@ -79,10 +80,12 @@ function sendGateCommand(gateId, command) {
   }
 
   const topic = `gates/${gateId}/command`;
+  const action = command.type || 'command';
   client.publish(topic, JSON.stringify({ ...command, ts: Date.now() }), { qos: 1 }, (err) => {
     if (err) console.error('[MQTT] Publish failed:', err.message);
+    // Record what actually reached the broker, not just what was attempted.
+    logAccess(command.residentId || null, gateId, err ? `${action}-failed` : action);
   });
-  logAccess(command.residentId || null, gateId, command.type || 'command');
   return true;
 }
 

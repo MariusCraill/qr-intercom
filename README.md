@@ -12,6 +12,7 @@ answers questions using your calendar, notes and uploaded documents.
 | ------------- | ----------------------------------------------------------------- |
 | `server/`     | Intercom server: dashboard, resident app, gate kiosk, WebRTC, MQTT |
 | `agent-app/`  | Separate personal agent (LLM chat, documents, Microsoft Graph)     |
+| `android/`    | Resident app for Android: the resident page with camera/mic, no browser needed |
 | `start.bat`   | Windows launcher that boots the intercom server and opens the UI  |
 
 ## Requirements
@@ -53,6 +54,25 @@ worth knowing:
 | `DB_PATH`          | `C:/qr-intercom-data/…` | SQLite file                                         |
 | `PUBLIC_BASE_URL`  | derived from request    | Set explicitly behind a proxy so QR codes point at the right host |
 | `COOKIE_SECURE`    | `false`                 | Set `true` once HTTPS is your normal path            |
+| `ADMIN_USERNAME`   | `admin`                 | Admin login for a new database                      |
+| `ADMIN_PASSWORD`   | generated               | Initial admin password for a new database. Left blank, a random one is printed to the console on first boot |
+| `ALLOW_REGISTRATION` | `false`               | Opens `/api/auth/register` to anyone. Residents can open gates, so keep it off unless the network is trusted |
+
+## First sign-in
+
+On a brand-new database the server seeds an admin (username `admin`, or
+`ADMIN_USERNAME`), a few demo residents and two gates. The admin password is
+`ADMIN_PASSWORD` from `.env`, or a random one printed once:
+
+```
+[DB] Demo data seeded. Sign in as "admin" with password: <random>
+```
+
+The demo residents get their own random password, printed on the next line, so
+a password set in `.env` is never shared with accounts that can open gates.
+
+Older versions seeded every account with the password `admin`. If the console
+warns that accounts still use it, change or delete them from the dashboard.
 
 HTTPS uses a self-signed certificate generated on first boot and cached in
 `.certs/`. Accept the warning once per device and camera/mic will work; the
@@ -78,7 +98,11 @@ This is built for a private LAN. Before exposing it to the internet:
 - Put it behind a reverse proxy with a trusted certificate instead of relying on
   the self-signed one.
 - Set `COOKIE_SECURE=true` and narrow `CORS_ORIGIN` from `*`.
-- Only the admin account may open doors — keep its password strong.
+- A door opens only for the resident who answered that call, or an admin, and
+  only once per call. Self-registration is off by default for this reason.
+- Call events go only to signed-in residents, and WebRTC signalling is relayed
+  only between the two ends of a call, so a visitor's page cannot see or join
+  anyone else's call.
 
 Secrets, databases, TLS keys and `node_modules/` are all excluded by
 `.gitignore`. Only `.env.example` files are committed, and CI runs
@@ -94,18 +118,44 @@ fails the build instead of reaching the public history.
 | Secret scan | `.env`, keys or tokens committed, including in existing history        |
 | Syntax      | A file that does not parse, on Node 20 and 22                          |
 | Install     | A `package-lock.json` that has drifted out of sync with its `package.json` |
+| Android APK | The Android app no longer builds                                      |
 
 There is no test suite yet, so nothing asserts application behaviour.
+
+## Android app
+
+`android/` is a small app that opens the resident page (`/resident/`) and gives it the
+camera and microphone. On first launch it asks for the server's HTTPS address, e.g.
+`https://192.168.1.20:3143`; change it later from the menu.
+
+The server's certificate is self-signed, so the first time you connect the app shows
+its SHA-256 fingerprint. Compare it with the one in the server's startup banner, then
+tap **Trust**. From then on the app accepts only that certificate. If it ever changes,
+the app warns you instead of connecting silently.
+
+Build it without Android Studio or Gradle (Ubuntu/Debian):
+
+```bash
+sudo apt-get install android-sdk android-sdk-platform-23 dalvik-exchange
+android/build.sh            # -> android/build/intercom.apk
+```
+
+The first build creates `android/intercom.keystore`. Keep it: Android only installs
+an update over an existing app when both are signed with the same key. Both the key
+and the APK are gitignored. The app runs on Android 6 and newer. Calls only ring
+while the app is open; it has no background notifications.
 
 ## agent-app
 
 A separate local assistant, unrelated to the intercom. It binds to `127.0.0.1`
-by default and is protected by an `AGENT_TOKEN`.
+by default. Every `/api` request must carry the `AGENT_TOKEN` from `.env` (the UI
+asks for it once), because any web page open in your browser can otherwise send
+requests to localhost. The app will not start without it.
 
 ```bash
 cd agent-app
 npm install
-copy .env.example .env    # set AGENT_TOKEN, then fill in your LLM provider
+copy .env.example .env    # set AGENT_TOKEN (required), then fill in your LLM provider
 npm start
 ```
 
