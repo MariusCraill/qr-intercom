@@ -9,6 +9,22 @@ let io = null;
 const activeCalls = new Map();
 const ringTimeouts = new Map();
 
+// Every authenticated socket sits in this room so it can be rung for gate calls.
+// Anonymous sockets (visitors, kiosks) never learn about other people's calls.
+const RESIDENTS_ROOM = 'residents';
+
+// The room that is rung for a call before anyone answers it.
+function ringRoom(call) {
+  return call.residentId ? `resident:${call.residentId}` : RESIDENTS_ROOM;
+}
+
+// Signalling may only flow between the two ends of a call, never from a bystander.
+function peerOf(call, socketId) {
+  if (socketId === call.visitorSocketId) return call.residentSocketId || null;
+  if (socketId === call.residentSocketId) return call.visitorSocketId;
+  return null;
+}
+
 function initWebRTC(...httpServers) {
   io = new Server({
     cors: { origin: process.env.CORS_ORIGIN || '*', methods: ['GET', 'POST'] },
@@ -37,6 +53,13 @@ function initWebRTC(...httpServers) {
     const user = socket.data.user;
     console.log(`[WS] Connected ${socket.id}${user ? ` as ${user.email}` : ' (anonymous)'}`);
 
+    // Join on connect rather than on request, so a reconnect does not silently
+    // stop a resident's phone from ringing.
+    if (user) {
+      socket.join(RESIDENTS_ROOM);
+      socket.join(`resident:${user.id}`);
+    }
+
     // Visitors may only ring a gate that actually exists.
     socket.on('call:request', (data) => {
       const gateId = String(data?.gateId || '');
@@ -60,7 +83,9 @@ function initWebRTC(...httpServers) {
       });
 
       socket.join(`call:${callId}`);
-      io.emit('call:incoming', { callId, gateId, visitorId, timestamp: new Date().toISOString() });
+      const timestamp = new Date().toISOString();
+      socket.emit('call:requested', { callId, gateId, timestamp });
+      io.to(RESIDENTS_ROOM).emit('call:incoming', { callId, gateId, visitorId, timestamp });
       scheduleRingTimeout(callId);
       console.log(`[CALL] Incoming call ${callId} from gate ${gateId}`);
     });
@@ -136,6 +161,8 @@ function initWebRTC(...httpServers) {
 
       socket.join(`call:${call.id}`);
       io.to(call.visitorSocketId).emit('call:answered', { callId: call.id });
+      // Stop every other phone that was ringing for this call.
+      io.to(ringRoom(call)).except(socket.id).emit('call:ended', { callId: call.id, reason: 'answered-elsewhere' });
       console.log(`[CALL] Call ${call.id} answered by ${user.email}`);
     });
 
@@ -170,26 +197,16 @@ function initWebRTC(...httpServers) {
       console.log(`[CALL] Gate ${call.gateId} unlocked by ${user.email} for call ${call.id}`);
     });
 
-    socket.on('webrtc:offer', (data) => {
+    const relay = (event, field) => socket.on(event, (data) => {
       const call = activeCalls.get(data?.callId);
       if (!call) return;
-      io.to(call.residentSocketId || call.visitorSocketId)
-        .emit('webrtc:offer', { callId: call.id, offer: data.offer });
+      const targetId = peerOf(call, socket.id);
+      if (!targetId) return;
+      io.to(targetId).emit(event, { callId: call.id, [field]: data[field] });
     });
-
-    socket.on('webrtc:answer', (data) => {
-      const call = activeCalls.get(data?.callId);
-      if (!call) return;
-      const targetId = call.residentSocketId === socket.id ? call.visitorSocketId : call.residentSocketId;
-      io.to(targetId).emit('webrtc:answer', { callId: call.id, answer: data.answer });
-    });
-
-    socket.on('webrtc:ice-candidate', (data) => {
-      const call = activeCalls.get(data?.callId);
-      if (!call) return;
-      const targetId = call.residentSocketId === socket.id ? call.visitorSocketId : call.residentSocketId;
-      io.to(targetId).emit('webrtc:ice-candidate', { callId: call.id, candidate: data.candidate });
-    });
+    relay('webrtc:offer', 'offer');
+    relay('webrtc:answer', 'answer');
+    relay('webrtc:ice-candidate', 'candidate');
 
     socket.on('disconnect', () => {
       for (const [callId, call] of activeCalls) {
@@ -210,8 +227,7 @@ function scheduleRingTimeout(callId) {
     ringTimeouts.delete(callId);
     const call = activeCalls.get(callId);
     if (!call || call.status !== 'ringing') return;
-    io?.to(`call:${callId}`).emit('call:ended', { callId, reason: 'no-answer' });
-    endCall(callId, 'missed');
+    endCall(callId, 'missed', 'no-answer');
   }, RING_TIMEOUT_MS);
   if (t.unref) t.unref();
   ringTimeouts.set(callId, t);
@@ -225,7 +241,7 @@ function clearRingTimeout(callId) {
   }
 }
 
-function endCall(callId, finalStatus = 'ended') {
+function endCall(callId, finalStatus = 'ended', reason) {
   const call = activeCalls.get(callId);
   if (!call) return;
   clearRingTimeout(callId);
@@ -241,8 +257,13 @@ function endCall(callId, finalStatus = 'ended') {
     [finalStatus, endedAt, duration, callId]
   );
 
-  if (call.visitorSocketId) io.to(call.visitorSocketId).emit('call:ended', { callId });
-  if (call.residentSocketId) io.to(call.residentSocketId).emit('call:ended', { callId });
+  const payload = reason ? { callId, reason } : { callId };
+  if (call.residentSocketId) {
+    io.to([call.visitorSocketId, call.residentSocketId]).emit('call:ended', payload);
+  } else {
+    // Never answered: the phones that are still ringing need to stop too.
+    io.to([call.visitorSocketId, ringRoom(call)]).emit('call:ended', payload);
+  }
 
   activeCalls.delete(callId);
   console.log(`[CALL] Call ${callId} ${finalStatus}, duration: ${duration}s`);

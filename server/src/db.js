@@ -87,9 +87,15 @@ function seedDemoData() {
   const { v4: uuid } = require('uuid');
 
   const existing = getOne('SELECT id FROM residents LIMIT 1');
-  if (existing) return;
+  if (existing) {
+    warnIfDefaultPassword(bcrypt);
+    return;
+  }
 
-  const pw = bcrypt.hashSync('admin', 10);
+  // A fixed, published password would let anyone who has read this repo log in
+  // and open the gates, so every fresh install gets its own.
+  const initialPassword = process.env.ADMIN_PASSWORD || require('crypto').randomBytes(9).toString('base64url');
+  const pw = bcrypt.hashSync(initialPassword, 10);
 
   const residents = [
     { name: 'Admin', apartment: '1', email: 'admin@demo.com', phone: '555-0100', is_admin: 1 },
@@ -117,7 +123,19 @@ function seedDemoData() {
     [gateId2, 'Parking Gate', 'Underground parking', 'gates/' + gateId2 + '/command']
   );
 
-  console.log('[DB] Demo data seeded (password: admin for all accounts)');
+  console.log('[DB] Demo data seeded. Sign in as admin@demo.com with password:', initialPassword);
+  console.log('[DB] The demo residents share that password; change or delete them from the dashboard.');
+}
+
+// Databases seeded by older versions used the password "admin" for every account.
+function warnIfDefaultPassword(bcrypt) {
+  const weak = getAll("SELECT email, password FROM residents WHERE email LIKE '%@demo.com'")
+    .filter((r) => bcrypt.compareSync('admin', r.password))
+    .map((r) => r.email);
+  if (weak.length) {
+    console.warn(`[DB] WARNING: these accounts still use the password "admin": ${weak.join(', ')}`);
+    console.warn('[DB]          Anyone who knows it can open the gates. Change them in the dashboard.');
+  }
 }
 
 function getDb() {
@@ -131,9 +149,13 @@ function getDb() {
 let saveTimer = null;
 let dirty = false;
 
+// Write to a temp file and rename it over the old one, so a crash or power cut
+// mid-write leaves the previous database intact instead of a truncated file.
 function writeToDisk() {
   if (!db) return;
-  fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+  const tmp = `${DB_PATH}.tmp`;
+  fs.writeFileSync(tmp, Buffer.from(db.export()));
+  fs.renameSync(tmp, DB_PATH);
 }
 
 function saveDatabase() {
@@ -163,11 +185,12 @@ function flushDatabase() {
   }
 }
 
-for (const sig of ['SIGINT', 'SIGTERM', 'exit']) {
-  process.on(sig, () => {
-    try { flushDatabase(); } catch { /* nothing left to do */ }
-  });
-}
+// Only 'exit' here: a SIGINT/SIGTERM listener would stop Node's default
+// behaviour of exiting, so Ctrl+C did nothing until index.js finished booting.
+// index.js installs the signal handlers and they exit through this one.
+process.on('exit', () => {
+  try { flushDatabase(); } catch { /* nothing left to do */ }
+});
 
 // ---------- query helpers ----------
 function run(sql, params = []) {

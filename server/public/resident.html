@@ -197,7 +197,11 @@
       } catch (e) { console.error(e); }
     }
 
+    // Don't let a second ring hijack the call that is already in progress.
+    function busy() { return Boolean(peerConnection); }
+
     socket.on('call:incoming', (data) => {
+      if (busy()) return;
       currentCallId = data.callId;
       document.getElementById('call-from').textContent = 'Visitor at gate';
       document.getElementById('call-notification').classList.add('active');
@@ -208,6 +212,7 @@
     });
 
     socket.on('call:direct-incoming', (data) => {
+      if (busy()) return;
       currentCallId = data.callId;
       document.getElementById('call-from').textContent = data.visitorId + ' is calling you';
       document.getElementById('call-notification').classList.add('active');
@@ -291,7 +296,9 @@
       document.getElementById('video-container').classList.remove('active');
     }
 
-    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
 
     if (token) showMain();
   </script>
