@@ -1,20 +1,16 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
-const express = require('express');
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const cookieParser = require('cookie-parser');
 
 const { initDatabase, flushDatabase } = require('./db');
-const { initMQTT, isConnected: isMQTTConnected } = require('./mqtt');
+const { initMQTT } = require('./mqtt');
 const { initWebRTC } = require('./webrtc');
-const apiRoutes = require('./routes/api');
-const gateRoutes = require('./routes/gate');
-const residentRoutes = require('./routes/resident');
+const { createApp } = require('./app');
 
 const PORT = parseInt(process.env.PORT) || 3100;
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT) || 3143;
@@ -107,83 +103,7 @@ function listen(server, port, label) {
 
 async function start() {
   await initDatabase();
-
-  const app = express();
-  // Only trust X-Forwarded-* when a proxy is actually in front, otherwise any
-  // client can spoof its IP and slip past the login rate limiter.
-  app.set('trust proxy', process.env.TRUST_PROXY === 'true');
-  app.disable('x-powered-by');
-
-  app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    // The pages need inline <script>, so allow inline rather than breaking them.
-    res.setHeader(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
-      "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'"
-    );
-    next();
-  });
-
-  const corsOrigin = process.env.CORS_ORIGIN;
-  if (corsOrigin && corsOrigin !== '*') {
-    const allowed = corsOrigin.split(',').map((s) => s.trim());
-    app.use((req, res, next) => {
-      const origin = req.headers.origin;
-      if (origin && allowed.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      }
-      if (req.method === 'OPTIONS') return res.sendStatus(204);
-      next();
-    });
-  } else {
-    // Credentialed requests cannot use `Access-Control-Allow-Origin: *`, so
-    // same-origin (the normal case) is left untouched and cross-origin is closed.
-    app.use((req, res, next) => {
-      if (req.method === 'OPTIONS') return res.sendStatus(204);
-      next();
-    });
-  }
-
-  app.use(express.json({ limit: '256kb' }));
-  app.use(cookieParser());
-  app.use(express.static(path.join(__dirname, '../public'), { maxAge: '1h', etag: true }));
-
-  app.get('/healthz', (req, res) => {
-    res.json({
-      ok: true,
-      status: 'ready',
-      uptime: Math.round(process.uptime()),
-      startedAt: STARTED_AT,
-      mqtt: isMQTTConnected()
-    });
-  });
-
-  app.use('/api', apiRoutes);
-  app.use('/gate', gateRoutes);
-  app.use('/resident', residentRoutes);
-
-  app.get('/call/:residentId', (req, res) => {
-    res.sendFile('call.html', { root: path.join(__dirname, '../public') });
-  });
-
-  app.get('/test', (req, res) => {
-    res.sendFile('test.html', { root: path.join(__dirname, '../public') });
-  });
-
-  app.use((req, res) => res.status(404).json({ error: 'Not found' }));
-
-  // eslint-disable-next-line no-unused-vars
-  app.use((err, req, res, next) => {
-    console.error('[HTTP]', err.message);
-    res.status(err.status || 500).json({ error: err.status ? err.message : 'Internal server error' });
-  });
+  const app = createApp({ getStartedAt: () => STARTED_AT });
 
   const localIP = getLocalIP();
   const httpServer = http.createServer(app);

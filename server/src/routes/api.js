@@ -36,6 +36,32 @@ function publicUser(u) {
   return { id: u.id, name: u.name, apartment: u.apartment, email: u.email, is_admin: u.is_admin };
 }
 
+const MIN_PASSWORD_LENGTH = 8;
+const PASSWORD_TOO_SHORT = `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+const isTooShort = (password) => String(password).length < MIN_PASSWORD_LENGTH;
+
+const emailTaken = (email) => Boolean(getOne('SELECT id FROM residents WHERE email = ?', [email]));
+
+// Inserts a resident and returns its new id. Throws on a constraint violation.
+async function createResident({ name, apartment, phone, email, password, isAdmin }) {
+  const id = uuid();
+  const hashedPassword = await bcrypt.hash(password, 10);
+  run(
+    'INSERT INTO residents (id, name, apartment, phone, email, password, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, name, apartment, phone || null, email, hashedPassword, isAdmin ? 1 : 0]
+  );
+  return id;
+}
+
+// The link behind a resident's QR code, and the code itself.
+async function residentQr(base, resident) {
+  const url = `${base}/call/${resident.id}`;
+  const image = await qr().toDataURL(url, { width: 400, margin: 2 });
+  return { resident, qr: image, url };
+}
+
+const NO_BASE_URL = { error: 'Set PUBLIC_BASE_URL to generate QR codes' };
+
 // ---------- public (unauthenticated) ----------
 router.get('/public/resident/:id', (req, res) => {
   const resident = getOne('SELECT id, name, apartment FROM residents WHERE id = ?', [req.params.id]);
@@ -72,22 +98,17 @@ router.post('/auth/register', loginRateLimit, async (req, res) => {
     return res.status(400).json({ error: 'Name, apartment, email, and password required' });
   }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
-  if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (isTooShort(password)) return res.status(400).json({ error: PASSWORD_TOO_SHORT });
 
-  if (getOne('SELECT id FROM residents WHERE email = ?', [email])) {
+  if (emailTaken(email)) {
     registerFailedLogin(req); // also throttles probing for registered emails
     return res.status(409).json({ error: 'Email already registered' });
   }
 
   // Public self-registration can never create an admin.
-  const id = uuid();
-  const hashedPassword = await bcrypt.hash(password, 10);
-
+  let id;
   try {
-    run(
-      'INSERT INTO residents (id, name, apartment, phone, email, password, is_admin) VALUES (?, ?, ?, ?, ?, ?, 0)',
-      [id, name, apartment, phone || null, email, hashedPassword]
-    );
+    id = await createResident({ name, apartment, phone, email, password, isAdmin: false });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
@@ -116,20 +137,15 @@ router.post('/residents', authMiddleware, requireAdmin, async (req, res) => {
   if (!name || !apartment || !email || !password) {
     return res.status(400).json({ error: 'Name, apartment, email, and password required' });
   }
-  if (String(password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (isTooShort(password)) return res.status(400).json({ error: PASSWORD_TOO_SHORT });
 
-  if (getOne('SELECT id FROM residents WHERE email = ?', [email])) {
+  if (emailTaken(email)) {
     return res.status(409).json({ error: 'Email already registered' });
   }
 
-  const id = uuid();
-  const hashedPassword = await bcrypt.hash(password, 10);
-
+  let id;
   try {
-    run(
-      'INSERT INTO residents (id, name, apartment, phone, email, password, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, name, apartment, phone || null, email, hashedPassword, is_admin ? 1 : 0]
-    );
+    id = await createResident({ name, apartment, phone, email, password, isAdmin: is_admin });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
@@ -142,9 +158,7 @@ router.put('/residents/:id', authMiddleware, requireAdmin, async (req, res) => {
   if (!name || !apartment || !email) {
     return res.status(400).json({ error: 'Name, apartment, and email required' });
   }
-  if (password && String(password).length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
-  }
+  if (password && isTooShort(password)) return res.status(400).json({ error: PASSWORD_TOO_SHORT });
 
   if (getOne('SELECT id FROM residents WHERE email = ? AND id != ?', [email, req.params.id])) {
     return res.status(409).json({ error: 'Email already in use' });
@@ -158,18 +172,16 @@ router.put('/residents/:id', authMiddleware, requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'You cannot remove your own admin rights' });
   }
 
+  // The password is only replaced when a new one is supplied.
+  const fields = { name, apartment, phone: phone || null, email, is_admin: is_admin ? 1 : 0 };
+  if (password) fields.password = await bcrypt.hash(password, 10);
+  const columns = Object.keys(fields);
+
   try {
-    if (password) {
-      run(
-        'UPDATE residents SET name=?, apartment=?, phone=?, email=?, password=?, is_admin=? WHERE id=?',
-        [name, apartment, phone || null, email, await bcrypt.hash(password, 10), is_admin ? 1 : 0, req.params.id]
-      );
-    } else {
-      run(
-        'UPDATE residents SET name=?, apartment=?, phone=?, email=?, is_admin=? WHERE id=?',
-        [name, apartment, phone || null, email, is_admin ? 1 : 0, req.params.id]
-      );
-    }
+    run(
+      `UPDATE residents SET ${columns.map((c) => `${c}=?`).join(', ')} WHERE id=?`,
+      [...Object.values(fields), req.params.id]
+    );
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
@@ -190,11 +202,9 @@ router.get('/residents/:id/qr', authMiddleware, requireAdmin, async (req, res) =
     if (!resident) return res.status(404).json({ error: 'Resident not found' });
 
     const base = getBaseUrl(req);
-    if (!base) return res.status(400).json({ error: 'Set PUBLIC_BASE_URL to generate QR codes' });
+    if (!base) return res.status(400).json(NO_BASE_URL);
 
-    const url = `${base}/call/${resident.id}`;
-    const image = await qr().toDataURL(url, { width: 400, margin: 2 });
-    res.json({ qr: image, url, resident });
+    res.json(await residentQr(base, resident));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -204,16 +214,9 @@ router.get('/residents/qr-all', authMiddleware, requireAdmin, async (req, res) =
   try {
     const residents = getAll('SELECT id, name, apartment FROM residents ORDER BY apartment');
     const base = getBaseUrl(req);
-    if (!base) return res.status(400).json({ error: 'Set PUBLIC_BASE_URL to generate QR codes' });
+    if (!base) return res.status(400).json(NO_BASE_URL);
 
-    const results = await Promise.all(
-      residents.map(async (r) => ({
-        resident: r,
-        qr: await qr().toDataURL(`${base}/call/${r.id}`, { width: 400, margin: 2 }),
-        url: `${base}/call/${r.id}`
-      }))
-    );
-    res.json(results);
+    res.json(await Promise.all(residents.map((r) => residentQr(base, r))));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

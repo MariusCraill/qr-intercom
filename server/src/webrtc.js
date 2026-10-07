@@ -1,7 +1,8 @@
 const { Server } = require('socket.io');
 const { v4: uuid } = require('uuid');
 const { run, getOne } = require('./db');
-const { verifyToken } = require('./auth');
+const { verifyToken, findUserById } = require('./auth');
+const mqtt = require('./mqtt');
 
 const RING_TIMEOUT_MS = parseInt(process.env.RING_TIMEOUT_MS) || 45 * 1000;
 
@@ -25,6 +26,29 @@ function peerOf(call, socketId) {
   return null;
 }
 
+const now = () => new Date().toISOString();
+
+// Records a new ringing call from a visitor socket. A gate call carries gateId and
+// rings every resident; a direct call carries residentId and rings only them.
+function openCall(socket, data, { gateId = null, residentId = null }) {
+  const call = {
+    id: uuid(),
+    gateId,
+    residentId,
+    visitorSocketId: socket.id,
+    visitorId: String(data?.visitorId || `visitor-${socket.id.slice(0, 8)}`),
+    status: 'ringing',
+    startedAt: now()
+  };
+
+  run('INSERT INTO call_logs (id, gate_id, resident_id, status) VALUES (?, ?, ?, ?)',
+    [call.id, gateId, residentId, 'ringing']);
+  activeCalls.set(call.id, call);
+  socket.join(`call:${call.id}`);
+  scheduleRingTimeout(call.id);
+  return call;
+}
+
 function initWebRTC(...httpServers) {
   io = new Server({
     cors: { origin: process.env.CORS_ORIGIN || '*', methods: ['GET', 'POST'] },
@@ -44,7 +68,7 @@ function initWebRTC(...httpServers) {
     if (!token) return next();
     const decoded = verifyToken(token);
     if (!decoded) return next(new Error('invalid token'));
-    socket.data.user = getOne('SELECT id, name, email, apartment, is_admin FROM residents WHERE id = ?', [decoded.id]);
+    socket.data.user = findUserById(decoded.id);
     if (!socket.data.user) return next(new Error('unknown user'));
     next();
   });
@@ -68,26 +92,11 @@ function initWebRTC(...httpServers) {
         return;
       }
 
-      const callId = uuid();
-      const visitorId = String(data?.visitorId || `visitor-${socket.id.slice(0, 8)}`);
-
-      run('INSERT INTO call_logs (id, gate_id, status) VALUES (?, ?, ?)', [callId, gateId, 'ringing']);
-
-      activeCalls.set(callId, {
-        id: callId,
-        gateId,
-        visitorSocketId: socket.id,
-        visitorId,
-        status: 'ringing',
-        startedAt: new Date().toISOString()
-      });
-
-      socket.join(`call:${callId}`);
-      const timestamp = new Date().toISOString();
-      socket.emit('call:requested', { callId, gateId, timestamp });
-      io.to(RESIDENTS_ROOM).emit('call:incoming', { callId, gateId, visitorId, timestamp });
-      scheduleRingTimeout(callId);
-      console.log(`[CALL] Incoming call ${callId} from gate ${gateId}`);
+      const call = openCall(socket, data, { gateId });
+      const timestamp = call.startedAt;
+      socket.emit('call:requested', { callId: call.id, gateId, timestamp });
+      io.to(RESIDENTS_ROOM).emit('call:incoming', { callId: call.id, gateId, visitorId: call.visitorId, timestamp });
+      console.log(`[CALL] Incoming call ${call.id} from gate ${gateId}`);
     });
 
     socket.on('call:direct-request', (data) => {
@@ -98,31 +107,17 @@ function initWebRTC(...httpServers) {
         return;
       }
 
-      const callId = uuid();
-      const visitorId = String(data?.visitorId || `visitor-${socket.id.slice(0, 8)}`);
-
-      run('INSERT INTO call_logs (id, resident_id, status) VALUES (?, ?, ?)', [callId, residentId, 'ringing']);
-
-      activeCalls.set(callId, {
-        id: callId,
-        residentId,
-        visitorSocketId: socket.id,
-        visitorId,
-        status: 'ringing',
-        startedAt: new Date().toISOString()
-      });
-
-      socket.join(`call:${callId}`);
-      socket.emit('call:requested', { callId, residentId, timestamp: new Date().toISOString() });
+      const call = openCall(socket, data, { residentId });
+      const timestamp = call.startedAt;
+      socket.emit('call:requested', { callId: call.id, residentId, timestamp });
       io.to(`resident:${residentId}`).emit('call:direct-incoming', {
-        callId,
+        callId: call.id,
         residentId,
-        visitorId,
+        visitorId: call.visitorId,
         residentName: resident.name,
-        timestamp: new Date().toISOString()
+        timestamp
       });
-      scheduleRingTimeout(callId);
-      console.log(`[CALL] Direct call ${callId} to resident ${resident.name} (${residentId})`);
+      console.log(`[CALL] Direct call ${call.id} to resident ${resident.name} (${residentId})`);
     });
 
     socket.on('call:resident-join', (data) => {
@@ -152,7 +147,7 @@ function initWebRTC(...httpServers) {
       clearRingTimeout(call.id);
       call.status = 'active';
       call.residentSocketId = socket.id;
-      call.answeredAt = new Date().toISOString();
+      call.answeredAt = now();
       const answeringResidentId = call.residentId || user.id;
       call.answeredBy = user.id;
 
@@ -188,10 +183,9 @@ function initWebRTC(...httpServers) {
       // One unlock per call, so a replayed or duplicated event cannot reopen the door.
       if (call.unlockedAt) return socket.emit('call:error', { error: 'Gate already unlocked for this call' });
 
-      const { unlockGate } = require('./mqtt');
-      const sent = unlockGate(call.gateId, user.id);
+      const sent = mqtt.unlockGate(call.gateId, user.id);
       if (!sent) return socket.emit('call:error', { error: 'Gate controller unreachable' });
-      call.unlockedAt = new Date().toISOString();
+      call.unlockedAt = now();
 
       io.to(call.visitorSocketId).emit('gate:unlocked', { callId: call.id });
       console.log(`[CALL] Gate ${call.gateId} unlocked by ${user.email} for call ${call.id}`);
@@ -247,7 +241,7 @@ function endCall(callId, finalStatus = 'ended', reason) {
   clearRingTimeout(callId);
 
   call.status = finalStatus;
-  const endedAt = new Date().toISOString();
+  const endedAt = now();
   const duration = call.answeredAt
     ? Math.max(0, Math.floor((new Date(endedAt) - new Date(call.answeredAt)) / 1000))
     : 0;

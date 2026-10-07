@@ -34,6 +34,11 @@ function resolveJwtSecret() {
 }
 
 const JWT_SECRET = resolveJwtSecret();
+
+// The fields a session carries around; never the password hash.
+function findUserById(id) {
+  return getOne('SELECT id, name, email, apartment, is_admin FROM residents WHERE id = ?', [id]);
+}
 const TOKEN_TTL = process.env.TOKEN_TTL || '7d';
 
 // ---------- brute force protection ----------
@@ -41,8 +46,12 @@ const MAX_ATTEMPTS = parseInt(process.env.LOGIN_RATE_LIMIT) || 10;
 const WINDOW_MS = 15 * 60 * 1000;
 const attempts = new Map(); // ip -> { count, firstAt }
 
+function clientKey(req) {
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
 function loginRateLimit(req, res, next) {
-  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  const key = clientKey(req);
   const now = Date.now();
   const entry = attempts.get(key);
 
@@ -57,14 +66,14 @@ function loginRateLimit(req, res, next) {
 }
 
 function registerFailedLogin(req) {
-  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  const key = clientKey(req);
   const entry = attempts.get(key) || { count: 0, firstAt: Date.now() };
   entry.count += 1;
   attempts.set(key, entry);
 }
 
 function clearFailedLogins(req) {
-  attempts.delete(req.ip || req.socket.remoteAddress || 'unknown');
+  attempts.delete(clientKey(req));
 }
 
 // keep the map from growing unbounded
@@ -108,7 +117,7 @@ function authMiddleware(req, res, next) {
   const decoded = verifyToken(token);
   if (!decoded) return res.status(401).json({ error: 'Invalid or expired token' });
 
-  const user = getOne('SELECT id, name, email, apartment, is_admin FROM residents WHERE id = ?', [decoded.id]);
+  const user = findUserById(decoded.id);
   if (!user) return res.status(401).json({ error: 'User not found' });
 
   req.user = user;
@@ -126,13 +135,15 @@ function optionalAuth(req, res, next) {
   if (token) {
     const decoded = verifyToken(token);
     if (decoded) {
-      req.user = getOne('SELECT id, name, email, apartment, is_admin FROM residents WHERE id = ?', [decoded.id]);
+      req.user = findUserById(decoded.id);
     }
   }
   next();
 }
 
 module.exports = {
+  resolveJwtSecret,
+  findUserById,
   generateToken,
   verifyToken,
   authMiddleware,
