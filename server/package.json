@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -21,5 +22,8 @@
     "socket.io": "^4.8.1",
     "sql.js": "^1.11.0",
     "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
   }
 }

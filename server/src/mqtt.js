@@ -5,7 +5,8 @@ let io = null;
 let connected = false;
 let lastErrorAt = 0;
 
-function initMQTT(socketIo) {
+// `connect` defaults to the mqtt package's; tests pass a fake broker client.
+function initMQTT(socketIo, { connect } = {}) {
   io = socketIo;
   const broker = process.env.MQTT_BROKER;
 
@@ -16,7 +17,7 @@ function initMQTT(socketIo) {
 
   // Required lazily: the mqtt package is expensive to load and is not needed
   // when no gate broker is configured.
-  const mqtt = require('mqtt');
+  connect = connect || require('mqtt').connect;
 
   const options = { reconnectPeriod: 5000, connectTimeout: 10000 };
   if (process.env.MQTT_GATE_USERNAME) {
@@ -24,7 +25,7 @@ function initMQTT(socketIo) {
     options.password = process.env.MQTT_GATE_PASSWORD;
   }
 
-  client = mqtt.connect(broker, options);
+  client = connect(broker, options);
 
   client.on('connect', () => {
     connected = true;

@@ -118,9 +118,29 @@ fails the build instead of reaching the public history.
 | Secret scan | `.env`, keys or tokens committed, including in existing history        |
 | Syntax      | A file that does not parse, on Node 20 and 22                          |
 | Install     | A `package-lock.json` that has drifted out of sync with its `package.json` |
+| Server tests | A change to login, residents, gates, QR codes, calls or door unlocks, on Node 20 and 22 |
 | Android APK | The Android app no longer builds                                      |
 
-There is no test suite yet, so nothing asserts application behaviour.
+## Tests
+
+The server has a test suite built on Node's own test runner. Each file boots the
+app against a throwaway database on a random port, so nothing touches `.env`, your
+real database or an MQTT broker:
+
+```bash
+cd server
+npm test
+```
+
+| File                 | Covers                                                               |
+| -------------------- | -------------------------------------------------------------------- |
+| `test/api.test.js`   | Login, rate limiting, admin-only routes, residents, gates, QR codes, pages, headers |
+| `test/webrtc.test.js` | Ringing, answering, signalling, unlocking and missed calls over Socket.IO |
+| `test/mqtt.test.js`  | Gate status relay and unlock commands, against a fake broker client   |
+| `test/db.test.js`    | Seeding, queries and saving to disk                                  |
+| `test/auth.test.js`  | `JWT_SECRET` checks, tokens, cookies and the admin guard             |
+
+The `agent-app/` has no tests yet.
 
 ## Android app
 
