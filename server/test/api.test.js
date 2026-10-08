@@ -225,6 +225,29 @@ test('logout clears the cookie', async () => {
   assert.match(res.headers.get('set-cookie'), /token=;/);
 });
 
+// These used to throw inside bcrypt or sql.js, which left the request hanging
+// and crashed the process on an unhandled rejection.
+test('non-text JSON fields are rejected with 400 instead of crashing the server', async () => {
+  const cases = [
+    ['POST', '/api/auth/login', { email: ADMIN_EMAIL, password: 12345678 }],
+    ['POST', '/api/auth/login', { email: { $ne: null }, password: 'x' }],
+    ['POST', '/api/residents', { name: 'N', apartment: '1', email: 'n@test.local', password: 12345678 }],
+    ['POST', '/api/residents', { name: ['N'], apartment: '1', email: 'n@test.local', password: 'n-password' }],
+    ['PUT', '/api/residents/whoever', { name: 'N', apartment: { a: 1 }, email: 'n@test.local' }],
+    ['POST', '/api/gates', { name: { a: 1 } }]
+  ];
+  for (const [method, url, body] of cases) {
+    const res = await request(method, url, { token: adminToken, body });
+    assert.equal(res.status, 400, `${method} ${url} ${JSON.stringify(body)}`);
+  }
+  assert.equal((await request('GET', '/healthz')).status, 200);
+});
+
+test('deleting a resident or gate that does not exist is a 404', async () => {
+  assert.equal((await request('DELETE', '/api/residents/missing', { token: adminToken })).status, 404);
+  assert.equal((await request('DELETE', '/api/gates/missing', { token: adminToken })).status, 404);
+});
+
 // Runs last: it locks this client's IP out of /api/auth/login.
 test('repeated failed logins are rate limited', async () => {
   const attempt = () => request('POST', '/api/auth/login', { body: { email: ADMIN_EMAIL, password: 'wrong' } });

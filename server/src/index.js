@@ -144,6 +144,7 @@ async function start() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('uncaughtException', (err) => console.error('[SRV] Uncaught:', err));
+  process.on('unhandledRejection', (err) => console.error('[SRV] Unhandled rejection:', err));
 }
 
 start().catch((err) => {

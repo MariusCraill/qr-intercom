@@ -11,8 +11,13 @@ const {
   registerFailedLogin,
   clearFailedLogins
 } = require('../auth');
+const { disconnectResident } = require('../webrtc');
 
 const router = express.Router();
+
+// Express 4 does not catch a rejected promise from an async handler: the request
+// hangs and the rejection takes down the process. Route it to the error handler.
+const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // The qrcode package is only needed by two admin routes and is slow to load,
 // so it is required on first use rather than at startup.
@@ -39,6 +44,21 @@ function publicUser(u) {
 const MIN_PASSWORD_LENGTH = 8;
 const PASSWORD_TOO_SHORT = `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
 const isTooShort = (password) => String(password).length < MIN_PASSWORD_LENGTH;
+
+// JSON bodies can carry numbers, arrays or objects where text is expected, and
+// bcrypt and sql.js throw on those. Returns the first such field, or null.
+function nonTextField(body, fields) {
+  return fields.find((f) => body[f] !== undefined && body[f] !== null && typeof body[f] !== 'string') || null;
+}
+
+function rejectNonText(res, body, fields) {
+  const field = nonTextField(body, fields);
+  if (!field) return false;
+  res.status(400).json({ error: `${field} must be text` });
+  return true;
+}
+
+const RESIDENT_FIELDS = ['name', 'apartment', 'phone', 'email', 'password'];
 
 const emailTaken = (email) => Boolean(getOne('SELECT id FROM residents WHERE email = ?', [email]));
 
@@ -70,9 +90,9 @@ router.get('/public/resident/:id', (req, res) => {
 });
 
 // ---------- auth ----------
-router.post('/auth/login', loginRateLimit, async (req, res) => {
+router.post('/auth/login', loginRateLimit, asyncRoute(async (req, res) => {
   const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) return res.status(400).json({ error: 'Email and password required' });
 
   const user = getOne('SELECT * FROM residents WHERE email = ?', [email]);
   const ok = user ? await bcrypt.compare(password, user.password) : false;
@@ -85,15 +105,17 @@ router.post('/auth/login', loginRateLimit, async (req, res) => {
   const token = generateToken({ id: user.id, email: user.email });
   res.cookie('token', token, cookieOptions());
   res.json({ token, user: publicUser(user) });
-});
+}));
 
 // Any resident can answer a gate call and open the door, so open self-registration
 // would let anyone on the network let themselves in. Admins add residents instead.
-router.post('/auth/register', loginRateLimit, async (req, res) => {
+router.post('/auth/register', loginRateLimit, asyncRoute(async (req, res) => {
   if (process.env.ALLOW_REGISTRATION !== 'true') {
     return res.status(403).json({ error: 'Self-registration is disabled. Ask the building admin for an account.' });
   }
-  const { name, apartment, phone, email, password } = req.body || {};
+  const body = req.body || {};
+  if (rejectNonText(res, body, RESIDENT_FIELDS)) return;
+  const { name, apartment, phone, email, password } = body;
   if (!name || !apartment || !email || !password) {
     return res.status(400).json({ error: 'Name, apartment, email, and password required' });
   }
@@ -116,7 +138,7 @@ router.post('/auth/register', loginRateLimit, async (req, res) => {
   const token = generateToken({ id, email });
   res.cookie('token', token, cookieOptions());
   res.status(201).json({ token, user: { id, name, apartment, email, is_admin: 0 } });
-});
+}));
 
 router.post('/auth/logout', (req, res) => {
   res.clearCookie('token', cookieOptions());
@@ -132,8 +154,10 @@ router.get('/residents', authMiddleware, requireAdmin, (req, res) => {
   res.json(getAll('SELECT id, name, apartment, phone, email, is_admin, created_at FROM residents ORDER BY created_at'));
 });
 
-router.post('/residents', authMiddleware, requireAdmin, async (req, res) => {
-  const { name, apartment, phone, email, password, is_admin } = req.body || {};
+router.post('/residents', authMiddleware, requireAdmin, asyncRoute(async (req, res) => {
+  const body = req.body || {};
+  if (rejectNonText(res, body, RESIDENT_FIELDS)) return;
+  const { name, apartment, phone, email, password, is_admin } = body;
   if (!name || !apartment || !email || !password) {
     return res.status(400).json({ error: 'Name, apartment, email, and password required' });
   }
@@ -151,10 +175,12 @@ router.post('/residents', authMiddleware, requireAdmin, async (req, res) => {
   }
 
   res.status(201).json({ id, name, apartment, email, is_admin: is_admin ? 1 : 0 });
-});
+}));
 
-router.put('/residents/:id', authMiddleware, requireAdmin, async (req, res) => {
-  const { name, apartment, phone, email, password, is_admin } = req.body || {};
+router.put('/residents/:id', authMiddleware, requireAdmin, asyncRoute(async (req, res) => {
+  const body = req.body || {};
+  if (rejectNonText(res, body, RESIDENT_FIELDS)) return;
+  const { name, apartment, phone, email, password, is_admin } = body;
   if (!name || !apartment || !email) {
     return res.status(400).json({ error: 'Name, apartment, and email required' });
   }
@@ -187,40 +213,37 @@ router.put('/residents/:id', authMiddleware, requireAdmin, async (req, res) => {
   }
 
   res.json({ ok: true });
-});
+}));
 
 router.delete('/residents/:id', authMiddleware, requireAdmin, (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account' });
+  if (!getOne('SELECT id FROM residents WHERE id = ?', [req.params.id])) {
+    return res.status(404).json({ error: 'Resident not found' });
+  }
   run('DELETE FROM residents WHERE id = ?', [req.params.id]);
+  // Their open sockets would otherwise keep ringing and answering gate calls.
+  disconnectResident(req.params.id);
   res.json({ ok: true });
 });
 
 // ---------- QR codes (admin only) ----------
-router.get('/residents/:id/qr', authMiddleware, requireAdmin, async (req, res) => {
-  try {
-    const resident = getOne('SELECT id, name, apartment FROM residents WHERE id = ?', [req.params.id]);
-    if (!resident) return res.status(404).json({ error: 'Resident not found' });
+router.get('/residents/:id/qr', authMiddleware, requireAdmin, asyncRoute(async (req, res) => {
+  const resident = getOne('SELECT id, name, apartment FROM residents WHERE id = ?', [req.params.id]);
+  if (!resident) return res.status(404).json({ error: 'Resident not found' });
 
-    const base = getBaseUrl(req);
-    if (!base) return res.status(400).json(NO_BASE_URL);
+  const base = getBaseUrl(req);
+  if (!base) return res.status(400).json(NO_BASE_URL);
 
-    res.json(await residentQr(base, resident));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  res.json(await residentQr(base, resident));
+}));
 
-router.get('/residents/qr-all', authMiddleware, requireAdmin, async (req, res) => {
-  try {
-    const residents = getAll('SELECT id, name, apartment FROM residents ORDER BY apartment');
-    const base = getBaseUrl(req);
-    if (!base) return res.status(400).json(NO_BASE_URL);
+router.get('/residents/qr-all', authMiddleware, requireAdmin, asyncRoute(async (req, res) => {
+  const residents = getAll('SELECT id, name, apartment FROM residents ORDER BY apartment');
+  const base = getBaseUrl(req);
+  if (!base) return res.status(400).json(NO_BASE_URL);
 
-    res.json(await Promise.all(residents.map((r) => residentQr(base, r))));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  res.json(await Promise.all(residents.map((r) => residentQr(base, r))));
+}));
 
 // ---------- gates (admin only) ----------
 router.get('/gates', authMiddleware, requireAdmin, (req, res) => {
@@ -228,7 +251,9 @@ router.get('/gates', authMiddleware, requireAdmin, (req, res) => {
 });
 
 router.post('/gates', authMiddleware, requireAdmin, (req, res) => {
-  const { name, location } = req.body || {};
+  const body = req.body || {};
+  if (rejectNonText(res, body, ['name', 'location'])) return;
+  const { name, location } = body;
   if (!name) return res.status(400).json({ error: 'Gate name required' });
 
   const id = uuid().split('-')[0];
@@ -242,6 +267,9 @@ router.post('/gates', authMiddleware, requireAdmin, (req, res) => {
 });
 
 router.delete('/gates/:id', authMiddleware, requireAdmin, (req, res) => {
+  if (!getOne('SELECT id FROM gates WHERE id = ?', [req.params.id])) {
+    return res.status(404).json({ error: 'Gate not found' });
+  }
   run('DELETE FROM gates WHERE id = ?', [req.params.id]);
   res.json({ ok: true });
 });

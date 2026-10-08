@@ -173,11 +173,10 @@ test('only the answering resident (or an admin) can unlock, once, and only after
   const { visitor, alice, bob } = await cast();
   const callId = await ringGate(visitor, [alice, bob]);
 
-  // Before anyone answers there is no answering resident, so a resident is
-  // refused outright; only an admin gets as far as the "answer first" check.
+  // While it rings, anyone who taps unlock is told to answer first.
   const early = next(alice, 'call:error');
   alice.emit('call:unlock', { callId });
-  assert.deepEqual(await early, { error: 'Not authorized to unlock' });
+  assert.deepEqual(await early, { error: 'Answer the call before unlocking' });
 
   const admin = await connected(socket(tokens.admin));
   const adminEarly = next(admin, 'call:error');
@@ -308,4 +307,41 @@ test('an unanswered call is closed out as missed', async () => {
   const log = callLog(callId);
   assert.equal(log.status, 'missed');
   assert.equal(log.duration, 0);
+});
+
+test('a visitor can ring only one call at a time', async () => {
+  const { visitor, alice, bob } = await cast();
+  const callId = await ringGate(visitor, [alice, bob]);
+
+  const refused = next(visitor, 'call:error');
+  visitor.emit('call:request', { gateId: 'front-gate' });
+  assert.deepEqual(await refused, { error: 'A call is already in progress' });
+
+  const refusedDirect = next(visitor, 'call:error');
+  visitor.emit('call:direct-request', { residentId: ids.alice });
+  assert.deepEqual(await refusedDirect, { error: 'A call is already in progress' });
+
+  // Once the first call is over the visitor can ring again.
+  const ended = next(visitor, 'call:ended');
+  visitor.emit('call:end', { callId });
+  await ended;
+  const requested = next(visitor, 'call:requested');
+  visitor.emit('call:request', { gateId: 'front-gate' });
+  const again = await requested;
+  assert.notEqual(again.callId, callId);
+  visitor.emit('call:end', { callId: again.callId });
+});
+
+test('deleting a resident drops their open sockets', async () => {
+  const created = await request('POST', '/api/residents', {
+    token: tokens.admin,
+    body: { name: 'Erin', apartment: '6E', email: 'erin@example.com', password: 'erin-password' }
+  });
+  const erinToken = await login(request, 'erin@example.com', 'erin-password');
+  const erin = await connected(socket(erinToken));
+
+  const dropped = next(erin, 'disconnect');
+  const res = await request('DELETE', `/api/residents/${created.body.id}`, { token: tokens.admin });
+  assert.equal(res.status, 200);
+  assert.equal(await dropped, 'io server disconnect');
 });
