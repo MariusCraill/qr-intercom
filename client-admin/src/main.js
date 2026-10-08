@@ -261,17 +261,33 @@ function openModal(title, fields, onSubmit) {
                 .join("")}</select></label>`
             : `<label><span>${f.label}</span><input type="${f.type || "text"}" name="${f.name}" ${
                 f.required !== false ? "required" : ""
-              } ${f.placeholder ? `placeholder="${f.placeholder}"` : ""} /></label>`
+              } ${f.placeholder ? `placeholder="${f.placeholder}"` : ""} ${
+                // Without this the browser fills the signed-in admin's own saved
+                // password into "New Password", silently changing it on Save.
+                f.type === "password" ? 'autocomplete="new-password"' : ""
+              } /></label>`
       )
       .join("") +
+    '<p id="modal-error" class="error-text hidden"></p>' +
     '<div class="modal-actions"><button type="button" class="btn btn-sm" id="btn-cancel">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save</button></div>';
   modalOverlay.classList.remove("hidden");
 
+  // A rejected save (password too short or too common, phone already in use)
+  // used to throw out of this handler unseen, leaving the dialog open with no
+  // message, so it looked as if editing did nothing.
   modalForm.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(modalForm);
     const body = Object.fromEntries(fd);
-    await onSubmit(body);
+    const errorEl = $("#modal-error");
+    errorEl.classList.add("hidden");
+    try {
+      await onSubmit(body);
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.remove("hidden");
+      return;
+    }
     modalOverlay.classList.add("hidden");
     loadAll();
   };
@@ -378,7 +394,7 @@ window.editAdmin = (id) => {
   openModal("Edit Admin", [
     { name: "name", label: "Name" },
     { name: "email", label: "Email", type: "email" },
-    { name: "phone", label: "Phone (can sign in with this)", type: "tel" },
+    { name: "phone", label: "Phone (can sign in with this)", type: "tel", required: false },
     { name: "password", label: "New Password (blank = keep)", type: "password", required: false },
   ], async (body) => {
     // phone is sent even when blank: an empty value is how the number is
