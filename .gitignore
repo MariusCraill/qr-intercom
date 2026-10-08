@@ -1,15 +1,36 @@
-# generated self-signed TLS key - never commit
-.certs/
-
 node_modules/
-*.db
-
-# local env files with real secrets - only .env.example is committed
+dist/
+data/
 .env
-
-# IDE / editor config
-.idea/
+.env.*
+!.env.example
+*.db
+.firmware/
 .vscode/
-*.iml
-.DS_Store
+.idea/
 
+# TLS material - never commit private keys
+certs/
+*.pem
+*.crt
+*.key
+
+# Android / Gradle build output
+android-resident/.gradle/
+android-resident/build/
+android-resident/app/build/
+android-resident/local.properties
+android-resident/app/debug/
+*.jks
+*.keystore
+# Built APKs are regenerable via gradle and dominate repo size
+*.apk
+
+# Device config: holds the Wi-Fi password, gate UUID and the HMAC secret
+# shared with the server. config.h.example is committed instead.
+firmware/intercom_gate/config.h
+
+# Logs & OS noise
+*.log
+Thumbs.db
+.DS_Store

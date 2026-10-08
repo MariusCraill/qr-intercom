@@ -1,0 +1,227 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface-hover: #222633;
+  --border: #2a2e3d;
+  --text: #e4e6ed;
+  --text-muted: #8b8fa3;
+  --primary: #4f8cff;
+  --primary-hover: #3d7aee;
+  --danger: #ff4f5e;
+  --danger-hover: #e83e4c;
+  --success: #34d399;
+  --radius: 10px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+
+#app {
+  width: 100%;
+  max-width: 480px;
+  padding: 24px 16px;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.header h1 {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.search-box {
+  margin-bottom: 16px;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-box input:focus {
+  border-color: var(--primary);
+}
+
+.resident-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resident-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.resident-item:hover {
+  background: var(--surface-hover);
+  border-color: var(--primary);
+}
+
+.resident-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.resident-name {
+  font-weight: 500;
+}
+
+.resident-unit {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.btn-call {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 20px;
+  background: var(--primary);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-call:hover {
+  background: var(--primary-hover);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ── Call Section ─────────────────────────────────────── */
+#call-section {
+  text-align: center;
+}
+
+.call-status {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.pulse-ring {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid var(--primary);
+  margin: 0 auto 12px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.pulse-ring.connected {
+  border-color: var(--success);
+  animation: none;
+}
+
+.pulse-ring.declined {
+  border-color: var(--danger);
+  animation: none;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.5;
+  }
+}
+
+#call-status-text {
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+#local-video {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 2px solid var(--border);
+  margin-bottom: 12px;
+}
+
+#remote-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: #000;
+  margin-bottom: 16px;
+}
+
+.call-controls {
+  display: flex;
+  justify-content: center;
+}
+
+.btn {
+  padding: 12px 32px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-right: 8px;
+}
+
+.btn.active {
+  background: var(--accent, #2a9d8f);
+  color: white;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: var(--danger-hover);
+}

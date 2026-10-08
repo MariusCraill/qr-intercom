@@ -1,0 +1,136 @@
+﻿*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0f172a; color: #e2e8f0; min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+#app { max-width: 800px; margin: 0 auto; padding: 20px; }
+
+/* â”€â”€ Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+#login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+
+.login-card {
+  background: #1e293b; border-radius: 12px; padding: 40px;
+  width: 100%; max-width: 360px; text-align: center;
+  box-shadow: 0 8px 30px rgba(0,0,0,.4);
+}
+.login-card h1 { font-size: 1.6rem; margin-bottom: 4px; }
+.login-card .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: .9rem; }
+
+.login-card input {
+  width: 100%; padding: 10px 14px; margin-bottom: 12px;
+  background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+  color: #e2e8f0; font-size: .95rem;
+}
+
+/* â”€â”€ Buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.btn {
+  background: #334155; color: #e2e8f0; border: none; border-radius: 8px;
+  padding: 10px 20px; font-size: .95rem; cursor: pointer; transition: .15s;
+}
+.btn:hover { background: #475569; }
+.btn-primary { background: #3b82f6; }
+.btn-primary:hover { background: #2563eb; }
+.btn-danger { background: #ef4444; }
+.btn-danger:hover { background: #dc2626; }
+.btn-whatsapp { background: #16a34a; }
+.btn-whatsapp:hover { background: #15803d; }
+.btn-sm { padding: 6px 14px; font-size: .85rem; }
+.btn-close { background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer; }
+
+/* â”€â”€ Header / Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.header h1 { font-size: 1.3rem; }
+.header .subtitle { width: 100%; color: #94a3b8; font-size: .85rem; }
+.header-settings { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.header-settings label { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: #94a3b8; }
+.header-settings input {
+  background: #0f172a; border: 1px solid #334155; border-radius: 6px;
+  color: #e2e8f0; padding: 5px 8px; font-size: .82rem; width: 140px;
+}
+
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.tab {
+  background: #1e293b; border: none; color: #94a3b8; padding: 8px 18px;
+  border-radius: 8px 8px 0 0; cursor: pointer; font-size: .9rem; transition: .15s;
+}
+.tab.active { background: #334155; color: #e2e8f0; }
+
+.toolbar { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; }
+.toolbar select {
+  background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+  color: #e2e8f0; padding: 6px 12px; font-size: .9rem;
+}
+
+/* â”€â”€ Data list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.data-list { display: flex; flex-direction: column; gap: 8px; }
+
+.data-card {
+  background: #1e293b; border-radius: 8px; padding: 14px 18px;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+}
+.data-card .info h3 { font-size: .95rem; margin-bottom: 2px; }
+.data-card .info p { color: #94a3b8; font-size: .8rem; }
+.data-card .actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* â”€â”€ Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: #1e293b; border-radius: 12px; padding: 24px;
+  width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-header h2 { font-size: 1.1rem; }
+
+.modal label { display: block; margin-bottom: 12px; }
+.modal label span { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: 4px; }
+.modal label input, .modal label select {
+  width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155;
+  border-radius: 8px; color: #e2e8f0; font-size: .9rem;
+}
+
+.modal .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
+/* â”€â”€ QR View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.qr-modal { text-align: center; }
+.qr-modal .qr-body { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#qr-image { width: 300px; height: 300px; background: #fff; padding: 8px; border-radius: 8px; }
+.qr-address { color: #e2e8f0; font-size: 1rem; font-weight: 600; }
+.qr-url { color: #94a3b8; font-size: .72rem; word-break: break-all; max-width: 380px; }
+.qr-options {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  justify-content: center; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid #334155; font-size: .8rem; color: #94a3b8;
+}
+.qr-options label { display: inline-flex; align-items: center; gap: 4px; color: #e2e8f0; }
+.qr-options input { accent-color: #3b82f6; }
+
+/* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.error-text { color: #f87171; font-size: .85rem; margin-top: 8px; }
+
+/* Password reset: notice text carries both success and failure, so it is
+   colour-neutral by default and only tinted once JS knows which it is. */
+.notice-text { font-size: .85rem; margin-top: 8px; color: #94a3b8; }
+.notice-text.is-error { color: #f87171; }
+.notice-text.is-ok { color: #4ade80; }
+.card-link { margin-top: 14px; }
+.link-btn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: #60a5fa; font-size: .85rem; text-decoration: underline;
+}
+.link-btn:hover { color: #93c5fd; }
+
+/* A generated password has to be read aloud and typed back in, so it is
+   shown in a monospace face with enough contrast to survive a screenshot. */
+.temp-password {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem; letter-spacing: .06em; color: #4ade80;
+  word-break: break-all; margin: 8px 0;
+}
+.empty-text { color: #64748b; font-size: .9rem; text-align: center; padding: 30px; }

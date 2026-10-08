@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - QR Intercom</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Login -->
+    <section id="login-screen">
+      <div class="login-card">
+        <h1>Admin Portal</h1>
+        <p class="subtitle">Manage intercom residents</p>
+        <form id="login-form">
+          <input type="text" id="login-identifier" placeholder="Phone number or email" autocomplete="username" required />
+          <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+          <button type="submit" class="btn btn-primary">Sign In</button>
+          <p id="login-error" class="error-text hidden"></p>
+          <p class="card-link"><button type="button" class="link-btn" id="link-forgot">Forgot your password?</button></p>
+        </form>
+
+        <!-- Forgot password: step 1 -->
+        <form id="forgot-form" class="hidden">
+          <p class="subtitle">Enter your phone number or email and we will send a reset link.</p>
+          <input type="text" id="forgot-identifier" placeholder="Phone number or email" required />
+          <button type="submit" class="btn btn-primary">Send reset link</button>
+          <p id="forgot-message" class="notice-text hidden"></p>
+          <p class="card-link"><button type="button" class="link-btn" id="link-back-login">Back to sign in</button></p>
+        </form>
+
+        <!-- Reset password: step 2, reached from the emailed ?token= link -->
+        <form id="reset-form" class="hidden">
+          <p class="subtitle">Choose a new password.</p>
+          <input type="password" id="reset-password" placeholder="New password" autocomplete="new-password" required />
+          <input type="password" id="reset-confirm" placeholder="Confirm new password" autocomplete="new-password" required />
+          <button type="submit" class="btn btn-primary">Set password</button>
+          <p id="reset-message" class="notice-text hidden"></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="dashboard" class="hidden">
+      <header class="header">
+        <h1>Admin Dashboard</h1>
+        <p class="subtitle" id="admin-info"></p>
+        <div class="header-settings">
+        </div>
+        <button id="btn-logout" class="btn btn-sm">Logout</button>
+      </header>
+
+      <nav class="tabs">
+        <button class="tab active" data-tab="residents">Residents</button>
+        <button class="tab" data-tab="admins">Admins</button>
+      </nav>
+
+      <!-- Residents Tab -->
+      <div class="tab-content active" id="tab-residents">
+        <div class="toolbar">
+          <button id="btn-add-resident" class="btn btn-primary btn-sm">+ Add Resident</button>
+        </div>
+        <div id="residents-list" class="data-list"></div>
+      </div>
+
+      <!-- Admins Tab -->
+      <div class="tab-content" id="tab-admins">
+        <div class="toolbar">
+          <button id="btn-add-admin" class="btn btn-primary btn-sm">+ Add Admin</button>
+        </div>
+        <div id="admins-list" class="data-list"></div>
+      </div>
+
+      <!-- Modal -->
+      <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-header">
+            <h2 id="modal-title">Add</h2>
+            <button id="btn-modal-close" class="btn-close">&times;</button>
+          </div>
+          <form id="modal-form"></form>
+        </div>
+      </div>
+
+      <!-- QR View Modal -->
+      <div id="qr-overlay" class="modal-overlay hidden">
+        <div class="modal qr-modal">
+          <div class="modal-header">
+            <h2 id="qr-title">Resident QR</h2>
+            <button id="btn-qr-close" class="btn-close">&times;</button>
+          </div>
+          <div class="qr-body">
+            <img id="qr-image" alt="QR code" />
+            <p id="qr-address" class="qr-address"></p>
+            <p id="qr-url" class="qr-url"></p>
+          </div>
+          <div class="qr-options">
+            Include in print:
+            <label><input type="checkbox" id="qr-inc-name" checked /> Name</label>
+            <label><input type="checkbox" id="qr-inc-address" checked /> Address</label>
+            <label><input type="checkbox" id="qr-inc-url" checked /> URL</label>
+            <label><input type="checkbox" id="qr-inc-qr" checked /> QR image</label>
+          </div>
+          <div class="modal-actions">
+            <button id="btn-qr-print" class="btn btn-sm">Print</button>
+            <button id="btn-qr-export" class="btn btn-primary btn-sm">Export PNG</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

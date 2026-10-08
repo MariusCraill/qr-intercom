@@ -1,190 +1,168 @@
-# QR Video Intercom
+# QR Video Intercom & Remote Gate Trigger
 
-A self-hosted video door-entry system. Residents scan a QR code at the gate, get
-through on a WebRTC call to the dashboard, and the door is opened over MQTT.
+A complete web-based intercom system with WebRTC video/audio, MQTT-driven gate control, and ESP32 relay firmware.
 
-Ships with a second component, `agent-app/` — a local personal assistant that
-answers questions using your calendar, notes and uploaded documents.
+## Architecture
 
-## Contents
-
-| Folder        | What it is                                                        |
-| ------------- | ----------------------------------------------------------------- |
-| `server/`     | Intercom server: dashboard, resident app, gate kiosk, WebRTC, MQTT |
-| `agent-app/`  | Separate personal agent (LLM chat, documents, Microsoft Graph)     |
-| `android/`    | Resident app for Android: the resident page with camera/mic, no browser needed |
-| `start.bat`   | Windows launcher that boots the intercom server and opens the UI  |
-
-## Requirements
-
-- Node.js 18 or newer
-- An MQTT broker (defaults to `mqtt://localhost:1883`) if you use physical gates
-- Windows, if you want to use `start.bat` (the server itself runs anywhere)
-
-## Quick start
-
-```bat
-start.bat
+```
+┌──────────────┐     WebRTC      ┌──────────────────┐
+│   Visitor     │◄───(video/aud)─►│   Resident PWA   │
+│   Browser     │                 │   (Mobile App)   │
+└──────┬───────┘                 └──────┬───────────┘
+       │                                │
+       │ REST + WS                      │ REST + WS
+       ▼                                ▼
+┌──────────────────────────────────────────────┐
+│              API Server (Node.js)            │
+│  ┌──────────┐  ┌───────────┐  ┌──────────┐  │
+│  │ Express  │  │ WebSocket │  │ MQTT     │  │
+│  │ REST API │  │ Signaling │  │ Client   │  │
+│  └──────────┘  └───────────┘  └────┬─────┘  │
+│                                    │         │
+│  ┌──────────┐  ┌───────────┐      │         │
+│  │ SQLite   │  │ JWT Auth  │      │         │
+│  └──────────┘  └───────────┘      │         │
+└───────────────────────────────────┼─────────┘
+                                    │ MQTT
+                                    ▼
+                         ┌──────────────────┐
+                         │   ESP32 Relay     │
+                         │   (Gate Controller)│
+                         └──────────────────┘
 ```
 
-The launcher installs dependencies, copies `.env.example` to `.env` on first run,
-waits for the server to actually answer on its health endpoint, and then opens the
-dashboard in your browser.
+## Quick Start
 
-To run the two parts by hand instead:
+### Prerequisites
+- Node.js 18+
+- MQTT broker (Mosquitto) — required for gate unlock; the video intercom works without it
+- PlatformIO CLI (for ESP32 firmware)
+
+### 1. Start MQTT Broker
+
+```bash
+docker compose up -d
+```
+
+### 2. Start API Server
 
 ```bash
 cd server
 npm install
-copy .env.example .env    # then edit JWT_SECRET before real use
-npm start
+cp .env.example .env     # then set JWT_SECRET to a random value
+npm run db:migrate       # bring an existing database onto the current schema
+npm run build && npm start
 ```
 
-## Configuration
+> **Do not run `npm run db:seed` against a database with real accounts.** It
+> drops and recreates the `residents`, `admins` and `call_logs` tables, so it
+> destroys all existing data. It now refuses to run unless you pass
+> `--force`, and is only appropriate for a brand-new database.
+> Use `npm run db:migrate` to move an existing database — that one preserves
+> every row.
 
-`server/.env` — all settings have working defaults in `.env.example`. The ones
-worth knowing:
+The server listens on two ports, and both matter:
 
-| Variable           | Default                 | Notes                                              |
-| ------------------ | ----------------------- | -------------------------------------------------- |
-| `PORT`             | `3100`                  | HTTP port                                           |
-| `HTTPS_PORT`       | `3143`                  | **Use this for calls** — browsers block camera on plain HTTP other than localhost |
-| `JWT_SECRET`       | —                        | **Required.** The server refuses to boot on an empty, placeholder or under-32-char value. `start.bat` generates one on first run; by hand: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `MQTT_BROKER`      | `mqtt://localhost:1883` | Broker URL, including credentials if required        |
-| `DB_PATH`          | `C:/qr-intercom-data/…` | SQLite file                                         |
-| `PUBLIC_BASE_URL`  | derived from request    | Set explicitly behind a proxy so QR codes point at the right host |
-| `COOKIE_SECURE`    | `false`                 | Set `true` once HTTPS is your normal path            |
-| `ADMIN_USERNAME`   | `admin`                 | Admin login for a new database                      |
-| `ADMIN_PASSWORD`   | generated               | Initial admin password for a new database. Left blank, a random one is printed to the console on first boot |
-| `ALLOW_REGISTRATION` | `false`               | Opens `/api/auth/register` to anyone. Residents can open gates, so keep it off unless the network is trusted |
+| Port | Default | Purpose |
+|------|---------|---------|
+| `HTTP_PORT` | 3010 | Plain HTTP. **This is what the Tailscale Funnel proxies to.** |
+| `PORT` | 3011 | Direct LAN HTTPS/WSS. Optional; the server runs HTTP-only if the certs are missing. |
 
-## First sign-in
+`HTTP_PORT` must match your `tailscale funnel status` config, which maps
+`/api`, `/ws`, `/admin`, `/visit` and `/resident` onto it. If they disagree the
+funnel returns 502 for everything.
 
-On a brand-new database the server seeds an admin (username `admin`, or
-`ADMIN_USERNAME`), a few demo residents and two gates. The admin password is
-`ADMIN_PASSWORD` from `.env`, or a random one printed once:
+On Windows, `start-intercom.cmd` starts the server with the right working
+directory and supervises it across crashes; a Scheduled Task named
+**QR Intercom Server** runs it at logon.
 
-```
-[DB] Demo data seeded. Sign in as "admin" with password: <random>
-```
-
-The demo residents get their own random password, printed on the next line, so
-a password set in `.env` is never shared with accounts that can open gates.
-
-Older versions seeded every account with the password `admin`. If the console
-warns that accounts still use it, change or delete them from the dashboard.
-
-HTTPS uses a self-signed certificate generated on first boot and cached in
-`.certs/`. Accept the warning once per device and camera/mic will work; the
-warning does not come back after a server restart.
-
-## Endpoints
-
-| URL                        | Who       | What                                  |
-| -------------------------- | --------- | ------------------------------------- |
-| `/`                        | Operator  | Dashboard, call list, door controls   |
-| `/resident/`               | Resident  | Answers calls on the phone            |
-| `/call/<residentId>`       | Resident  | Link behind the QR code at the gate   |
-| `/gate/<gateId>`           | Kiosk     | Gate terminal, shows QR code          |
-| `/healthz`                 | Anyone    | Liveness check used by the launcher   |
-
-## Security notes
-
-This is built for a private LAN. Before exposing it to the internet:
-
-- `JWT_SECRET` is mandatory. There is no built-in fallback — an empty, placeholder
-  or under-32-character value aborts the boot with instructions, because a
-  predictable signing key lets anyone mint an admin session.
-- Put it behind a reverse proxy with a trusted certificate instead of relying on
-  the self-signed one.
-- Set `COOKIE_SECURE=true` and narrow `CORS_ORIGIN` from `*`.
-- A door opens only for the resident who answered that call, or an admin, and
-  only once per call. Self-registration is off by default for this reason.
-- Call events go only to signed-in residents, and WebRTC signalling is relayed
-  only between the two ends of a call, so a visitor's page cannot see or join
-  anyone else's call.
-
-Secrets, databases, TLS keys and `node_modules/` are all excluded by
-`.gitignore`. Only `.env.example` files are committed, and CI runs
-[gitleaks](https://github.com/gitleaks/gitleaks) over every push so a leaked key
-fails the build instead of reaching the public history.
-
-## CI
-
-`.github/workflows/ci.yml` runs on every push and pull request:
-
-| Job         | What it catches                                                        |
-| ----------- | ---------------------------------------------------------------------- |
-| Secret scan | `.env`, keys or tokens committed, including in existing history        |
-| Syntax      | A file that does not parse, on Node 20 and 22                          |
-| Install     | A `package-lock.json` that has drifted out of sync with its `package.json` |
-| Server tests | A change to login, residents, gates, QR codes, calls or door unlocks, on Node 20 and 22 |
-| Android APK | The Android app no longer builds                                      |
-
-## Tests
-
-The server has a test suite built on Node's own test runner. Each file boots the
-app against a throwaway database on a random port, so nothing touches `.env`, your
-real database or an MQTT broker:
+### 3. Start Visitor Frontend
 
 ```bash
-cd server
-npm test
-```
-
-| File                 | Covers                                                               |
-| -------------------- | -------------------------------------------------------------------- |
-| `test/api.test.js`   | Login, rate limiting, admin-only routes, residents, gates, QR codes, pages, headers |
-| `test/webrtc.test.js` | Ringing, answering, signalling, unlocking and missed calls over Socket.IO |
-| `test/mqtt.test.js`  | Gate status relay and unlock commands, against a fake broker client   |
-| `test/db.test.js`    | Seeding, queries and saving to disk                                  |
-| `test/auth.test.js`  | `JWT_SECRET` checks, tokens, cookies and the admin guard             |
-
-The `agent-app/` has no tests yet.
-
-## Android app
-
-`android/` is a small app that opens the resident page (`/resident/`) and gives it the
-camera and microphone. On first launch it asks for the server's HTTPS address, e.g.
-`https://192.168.1.20:3143`; change it later from the menu.
-
-The server's certificate is self-signed, so the first time you connect the app shows
-its SHA-256 fingerprint. Compare it with the one in the server's startup banner, then
-tap **Trust**. From then on the app accepts only that certificate. If it ever changes,
-the app warns you instead of connecting silently.
-
-Build it without Android Studio or Gradle (Ubuntu/Debian):
-
-```bash
-sudo apt-get install android-sdk android-sdk-platform-23 dalvik-exchange
-android/build.sh            # -> android/build/intercom.apk
-```
-
-The first build creates `android/intercom.keystore`. Keep it: Android only installs
-an update over an existing app when both are signed with the same key. Both the key
-and the APK are gitignored. The app runs on Android 6 and newer. Calls only ring
-while the app is open; it has no background notifications.
-
-## agent-app
-
-A separate local assistant, unrelated to the intercom. It binds to `127.0.0.1`
-by default. Every `/api` request must carry the `AGENT_TOKEN` from `.env` (the UI
-asks for it once), because any web page open in your browser can otherwise send
-requests to localhost. The app will not start without it.
-
-```bash
-cd agent-app
+cd client-visitor
 npm install
-copy .env.example .env    # set AGENT_TOKEN (required), then fill in your LLM provider
-npm start
+npm run dev
 ```
 
-Works with any OpenAI-compatible provider — OpenAI, Ollama, LM Studio, or
-Anthropic through a compatible proxy. Calendar and OneNote come from Microsoft
-Graph and need an app registration in Entra ID; see the comments in
-`agent-app/.env.example`. Uploaded documents are indexed for retrieval, and web
-search is optional (DuckDuckGo needs no key, Tavily does).
+Served at `http://localhost:5173` — visit `/gate/<gate-uuid>`.
 
-## License
+### 4. Start Resident Frontend
 
-MIT
+```bash
+cd client-resident
+npm install
+npm run dev
+```
+
+Served at `http://localhost:5174`.
+
+### 5. Flash ESP32
+
+Edit `firmware/intercom_gate/config.h` with your Wi-Fi credentials, MQTT broker IP, gate UUID, and HMAC secret. Then:
+
+```bash
+cd firmware
+pio run -t upload
+```
+
+## Demo Flow
+
+1. **Visitor scans QR code** → Opens `/gate/<gateId>`, sees resident directory
+2. **Visitor searches & calls** → Picks a resident, WebRTC camera activates
+3. **Resident receives notification** → Accept audio or decline
+4. **Resident unlocks gate** → JWT-signed request hits API → MQTT publish → ESP32 pulses relay
+
+## Seeded Demo Credentials
+
+After `npm run db:seed`, these residents exist (password: `password123`):
+
+| Email              | Name        | Unit |
+|--------------------|-------------|------|
+| alice@example.com  | Alice Chen  | 101  |
+| bob@example.com    | Bob Patel   | 102  |
+| carol@example.com  | Carol Zhang | 201  |
+| david@example.com  | David Kim   | 202  |
+| eve@example.com    | Eve Johnson | 301  |
+
+## Project Structure
+
+```
+qr-intercom/
+├── server/                 # API + WebSocket + MQTT backend
+│   └── src/
+│       ├── index.ts        # Entry point
+│       ├── config/         # Environment config
+│       ├── db/             # SQLite schema + migrations
+│       ├── auth/           # JWT sign/verify + middleware
+│       ├── routes/         # REST endpoints
+│       ├── mqtt/           # MQTT client + unlock dispatch
+│       └── signaling/      # WebRTC signaling (WebSocket)
+├── client-visitor/         # Visitor web UI (Vite + vanilla JS)
+├── client-resident/        # Resident PWA (Vite + vanilla JS)
+├── firmware/               # ESP32 PlatformIO project
+│   └── intercom_gate/
+│       ├── config.h        # Wi-Fi, MQTT, GPIO config
+│       ├── signature.h     # HMAC-SHA256 verification
+│       ├── gpio_relay.h    # Relay pulse controller
+│       ├── mqtt_handler.h  # MQTT subscription + dispatch
+│       └── intercom_gate.ino  # Main firmware
+├── docker-compose.yml      # Mosquitto MQTT broker
+└── mosquitto/              # Broker configuration
+```
+
+## Security Model
+
+- **JWT tokens** authenticate residents for unlock commands
+- **HMAC-SHA256 signatures** verify MQTT payloads (shared secret between server + ESP32)
+- **Timestamp-based replay protection** — commands expire after 30 seconds
+- **Gate-scoped permissions** — residents can only unlock their assigned gate
+
+## Production Hardening
+
+- Replace SQLite with PostgreSQL
+- Enable MQTT authentication (username/password + TLS)
+- Add rate limiting to unlock endpoint
+- Implement WebRTC TURN servers for NAT traversal
+- Add TLS to all WebSocket connections
+- Store HMAC secrets in hardware security modules
+- Flash ESP32 with device-specific keys via provisioning

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f1117" />
+  <link rel="manifest" href="./manifest.json" />
+  <title>Resident Intercom</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Login Screen -->
+    <section id="login-screen">
+      <div class="login-card">
+        <h1>Resident Portal</h1>
+        <p class="subtitle" id="login-subtitle">Sign in to receive visitor calls</p>
+
+        <form id="login-form">
+          <input type="text" id="login-identifier" placeholder="Phone number or email" autocomplete="username" required />
+          <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+          <button type="submit" class="btn btn-primary">Sign In</button>
+          <p id="login-error" class="error-text hidden"></p>
+          <p class="auth-switch"><span id="link-forgot" class="link">Forgot your password?</span></p>
+        </form>
+
+        <form id="register-form" class="hidden">
+          <input type="text" id="reg-unit" placeholder="Unit / Address" required />
+          <input type="text" id="reg-name" placeholder="Full name" required />
+          <input type="tel" id="reg-phone" placeholder="Phone number" required />
+          <input type="email" id="reg-email" placeholder="Email (optional)" />
+          <input type="password" id="reg-password" placeholder="Create password" required />
+          <button type="submit" class="btn btn-primary">Create Account</button>
+          <p id="register-error" class="error-text hidden"></p>
+        </form>
+
+        <!-- Forgot password: step 1 -->
+        <form id="forgot-form" class="hidden">
+          <input type="text" id="forgot-identifier" placeholder="Phone number or email" required />
+          <button type="submit" class="btn btn-primary">Send reset link</button>
+          <p id="forgot-message" class="notice-text hidden"></p>
+        </form>
+
+        <!-- Reset password: step 2, reached from the emailed ?token= link -->
+        <form id="reset-form" class="hidden">
+          <input type="password" id="reset-password" placeholder="New password" autocomplete="new-password" required />
+          <input type="password" id="reset-confirm" placeholder="Confirm new password" autocomplete="new-password" required />
+          <button type="submit" class="btn btn-primary">Set password</button>
+          <p id="reset-message" class="notice-text hidden"></p>
+        </form>
+
+        <div class="auth-switch">
+          <span id="register-link" class="link">Create an account</span>
+          <span id="login-link" class="link hidden">Already registered? Sign in</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="dashboard" class="hidden">
+      <header class="header">
+        <div class="header-top">
+          <div>
+            <h1 id="resident-name">Resident</h1>
+            <p class="subtitle" id="resident-unit"></p>
+          </div>
+          <div class="header-actions">
+            <button id="btn-account" class="btn btn-sm" title="Account Settings">&#9881;</button>
+            <button id="btn-logout" class="btn btn-sm btn-danger" title="Logout">Logout</button>
+          </div>
+        </div>
+        <div class="status-badge online" id="ws-status">Connecting...</div>
+      </header>
+
+      <div class="call-incoming hidden" id="incoming-call">
+        <div class="pulse-ring"></div>
+        <h2>Incoming Call</h2>
+        <p id="caller-info">Visitor calling</p>
+        <div class="incoming-actions">
+          <button id="btn-accept" class="btn btn-success">Accept Audio</button>
+          <button id="btn-decline" class="btn btn-danger">Decline</button>
+        </div>
+      </div>
+
+      <div class="call-active hidden" id="active-call">
+        <video id="remote-video" autoplay playsinline></video>
+        <video id="local-video" autoplay muted playsinline></video>
+        <audio id="remote-audio" autoplay></audio>
+        <div class="active-call-actions">
+          <button id="btn-unlock" class="btn btn-success btn-large">Unlock</button>
+          <button id="btn-end-call" class="btn btn-danger">End Call</button>
+        </div>
+      </div>
+
+      <div class="qr-section" id="qr-section">
+        <h3>Your Call QR Code</h3>
+        <p class="text-muted">Visitors scan this to call you directly</p>
+        <div class="qr-container">
+          <div id="qr-code"></div>
+        </div>
+        <div class="qr-url" id="qr-url"></div>
+      </div>
+
+      <div class="idle-state" id="idle-state">
+        <div class="idle-icon">&#128222;</div>
+        <p>Waiting for visitor calls...</p>
+        <p class="text-muted">You will be notified when a visitor rings.</p>
+      </div>
+
+      <div class="call-log-section">
+        <h3>Recent Calls</h3>
+        <ul id="call-log-list" class="call-log-list"></ul>
+      </div>
+    </section>
+
+    <!-- Account Edit Modal -->
+    <div id="account-modal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>Edit Account</h2>
+          <button id="btn-modal-close" class="btn-close">&times;</button>
+        </div>
+        <form id="account-form">
+          <label><span>Name</span><input type="text" id="acct-name" required /></label>
+          <label><span>Phone (login)</span><input type="tel" id="acct-phone" required /></label>
+          <label><span>Email (optional)</span><input type="email" id="acct-email" placeholder="For PDF access logs, billing &amp; announcements" /></label>
+          <label><span>New Password (blank to keep)</span><input type="password" id="acct-password" /></label>
+          <p id="account-error" class="error-text hidden"></p>
+          <p id="account-success" class="success-text hidden"></p>
+          <div class="modal-actions">
+            <button type="button" id="btn-acct-cancel" class="btn btn-sm">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ringtone audio (generated via Web Audio API) -->
+  <audio id="ringtone-audio" loop preload="none"></audio>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
