@@ -113,7 +113,7 @@
     <div class="gate-name" id="gate-name">Loading...</div>
     <div class="gate-location" id="gate-location"></div>
 
-    <button class="call-btn" id="call-btn" onclick="toggleCall()">
+    <button class="call-btn" id="call-btn" onclick="visitorCall.toggle()">
       <span class="icon">📞</span>
       <span id="call-btn-text">Ring Bell</span>
     </button>
@@ -125,28 +125,21 @@
   <div class="video-container" id="video-container">
     <video id="remote-video" autoplay playsinline></video>
     <div class="video-overlay">
-      <button class="btn btn-danger" onclick="endCall()" style="font-size:1.1rem;padding:14px 32px">End Call</button>
+      <button class="btn btn-danger" onclick="visitorCall.end()" style="font-size:1.1rem;padding:14px 32px">End Call</button>
     </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/visitor-call.js"></script>
   <script>
     const gateId = window.location.pathname.split('/').pop();
-    const visitorId = 'visitor-' + Math.random().toString(36).substr(2, 8);
-    const socket = io();
-    let callId = null;
-    let localStream = null;
-    let remoteStream = null;
-    let peerConnection = null;
 
-    const ICE_SERVERS = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
-    };
-
-    document.getElementById('visitor-id').textContent = `Visitor: ${visitorId}`;
+    const visitorCall = createVisitorCall({
+      requestEvent: 'call:request',
+      request: () => ({ gateId }),
+      idleLabel: 'Ring Bell',
+      idleStatus: 'Ready'
+    });
 
     async function loadGate() {
       try {
@@ -161,117 +154,6 @@
       } catch {
         document.getElementById('gate-name').textContent = 'Gate ' + gateId;
       }
-    }
-
-    async function toggleCall() {
-      if (callId) {
-        endCall();
-      } else {
-        startCall();
-      }
-    }
-
-    async function startCall() {
-      const btn = document.getElementById('call-btn');
-      btn.classList.add('ringing');
-      document.getElementById('call-btn-text').textContent = 'Calling...';
-      document.getElementById('status-text').textContent = 'Connecting to resident...';
-
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      } catch (e) {
-        document.getElementById('status-text').textContent = 'Camera/mic access denied';
-        btn.classList.remove('ringing');
-        document.getElementById('call-btn-text').textContent = 'Ring Bell';
-        return;
-      }
-
-      socket.emit('call:request', { gateId, visitorId });
-    }
-
-    // The server answers the ringing socket directly; call:incoming only goes to residents.
-    socket.on('call:requested', (data) => {
-      if (data.gateId === gateId && !callId) {
-        callId = data.callId;
-        document.getElementById('status-text').textContent = 'Ringing...';
-      }
-    });
-
-    socket.on('call:error', (data) => {
-      document.getElementById('status-text').textContent = data.error || 'Call failed';
-      resetUI();
-    });
-
-    socket.on('call:answered', async (data) => {
-      if (data.callId === callId) {
-        const btn = document.getElementById('call-btn');
-        btn.classList.remove('ringing');
-        btn.classList.add('in-call');
-        document.getElementById('call-btn-text').textContent = 'End Call';
-        document.getElementById('status-text').textContent = 'Connected!';
-
-        peerConnection = new RTCPeerConnection(ICE_SERVERS);
-        localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-
-        peerConnection.ontrack = (e) => {
-          document.getElementById('remote-video').srcObject = e.streams[0];
-          document.getElementById('video-container').classList.add('active');
-        };
-
-        peerConnection.onicecandidate = (e) => {
-          if (e.candidate) socket.emit('webrtc:ice-candidate', { callId, candidate: e.candidate });
-        };
-
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('webrtc:offer', { callId, offer });
-      }
-    });
-
-    socket.on('webrtc:answer', async (data) => {
-      if (data.callId === callId && peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-      }
-    });
-
-    socket.on('webrtc:ice-candidate', (data) => {
-      if (data.callId === callId && peerConnection) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-      }
-    });
-
-    socket.on('call:ended', (data) => {
-      if (data.callId === callId) {
-        resetUI();
-      }
-    });
-
-    socket.on('gate:unlocked', (data) => {
-      if (data.callId === callId) {
-        document.getElementById('status-text').textContent = 'Gate unlocked!';
-        setTimeout(() => {
-          document.getElementById('status-text').textContent = 'Connected!';
-        }, 3000);
-      }
-    });
-
-    function endCall() {
-      if (callId) {
-        socket.emit('call:end', { callId });
-      }
-      resetUI();
-    }
-
-    function resetUI() {
-      callId = null;
-      if (peerConnection) { peerConnection.close(); peerConnection = null; }
-      if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-
-      document.getElementById('video-container').classList.remove('active');
-      const btn = document.getElementById('call-btn');
-      btn.classList.remove('ringing', 'in-call');
-      document.getElementById('call-btn-text').textContent = 'Ring Bell';
-      document.getElementById('status-text').textContent = 'Ready';
     }
 
     loadGate();

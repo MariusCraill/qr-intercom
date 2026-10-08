@@ -28,6 +28,21 @@ function peerOf(call, socketId) {
 
 const now = () => new Date().toISOString();
 
+// A visitor socket rings one call at a time, so a double tap or a looping script
+// cannot fill the call log or keep every resident's phone ringing.
+function hasOpenCall(socketId) {
+  for (const call of activeCalls.values()) {
+    if (call.visitorSocketId === socketId) return true;
+  }
+  return false;
+}
+
+function rejectSecondCall(socket) {
+  if (!hasOpenCall(socket.id)) return false;
+  socket.emit('call:error', { error: 'A call is already in progress' });
+  return true;
+}
+
 // Records a new ringing call from a visitor socket. A gate call carries gateId and
 // rings every resident; a direct call carries residentId and rings only them.
 function openCall(socket, data, { gateId = null, residentId = null }) {
@@ -86,6 +101,7 @@ function initWebRTC(...httpServers) {
 
     // Visitors may only ring a gate that actually exists.
     socket.on('call:request', (data) => {
+      if (rejectSecondCall(socket)) return;
       const gateId = String(data?.gateId || '');
       if (!getOne('SELECT id FROM gates WHERE id = ?', [gateId])) {
         socket.emit('call:error', { error: 'Gate not found' });
@@ -100,6 +116,7 @@ function initWebRTC(...httpServers) {
     });
 
     socket.on('call:direct-request', (data) => {
+      if (rejectSecondCall(socket)) return;
       const residentId = String(data?.residentId || '');
       const resident = getOne('SELECT id, name, apartment FROM residents WHERE id = ?', [residentId]);
       if (!resident) {
@@ -172,12 +189,13 @@ function initWebRTC(...httpServers) {
       const call = activeCalls.get(data?.callId);
       if (!call) return;
       if (!user) return socket.emit('call:error', { error: 'Authentication required' });
+      // Checked first so a resident who taps unlock while it rings is told what to do.
+      if (call.status !== 'active') {
+        return socket.emit('call:error', { error: 'Answer the call before unlocking' });
+      }
       // Only the resident who answered (or an admin) may open the door.
       if (user.id !== call.answeredBy && !user.is_admin) {
         return socket.emit('call:error', { error: 'Not authorized to unlock' });
-      }
-      if (call.status !== 'active') {
-        return socket.emit('call:error', { error: 'Answer the call before unlocking' });
       }
       if (!call.gateId) return socket.emit('call:error', { error: 'This call has no gate attached' });
       // One unlock per call, so a replayed or duplicated event cannot reopen the door.
@@ -263,8 +281,13 @@ function endCall(callId, finalStatus = 'ended', reason) {
   console.log(`[CALL] Call ${callId} ${finalStatus}, duration: ${duration}s`);
 }
 
+// Drops a deleted resident's open sockets, ending any call they are on.
+function disconnectResident(residentId) {
+  if (io) io.in(`resident:${residentId}`).disconnectSockets(true);
+}
+
 function getIO() {
   return io;
 }
 
-module.exports = { initWebRTC, getIO, activeCalls };
+module.exports = { initWebRTC, getIO, disconnectResident, activeCalls };
