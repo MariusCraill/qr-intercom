@@ -18,9 +18,16 @@ let qrDataUrl = null;
 const $ = (s) => document.querySelector(s);
 const loginScreen = $("#login-screen");
 const loginForm = $("#login-form");
-const loginEmail = $("#login-email");
+const loginIdentifier = $("#login-identifier");
 const loginPassword = $("#login-password");
 const loginError = $("#login-error");
+const forgotForm = $("#forgot-form");
+const forgotIdentifier = $("#forgot-identifier");
+const forgotMessage = $("#forgot-message");
+const resetForm = $("#reset-form");
+const resetPassword = $("#reset-password");
+const resetConfirm = $("#reset-confirm");
+const resetMessage = $("#reset-message");
 const dashboard = $("#dashboard");
 const adminInfo = $("#admin-info");
 const btnLogout = $("#btn-logout");
@@ -34,13 +41,45 @@ const tabs = document.querySelectorAll(".tab");
 const tabContents = document.querySelectorAll(".tab-content");
 
 // ── Auth helpers ─────────────────────────────────────────────────
+
+/**
+ * Reads a response without assuming it is JSON.
+ *
+ * When the server is down, or a dev proxy sits in front of a server that is
+ * down, the answer is 502/504 with an empty body. Calling res.json() on that
+ * throws "Unexpected end of JSON input", which says nothing about what
+ * actually happened and looks identical to a bug in this portal.
+ */
+async function readBody(res) {
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) {
+      throw new Error(
+        `Server unreachable (HTTP ${res.status}). Is the intercom server running?`,
+      );
+    }
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Unexpected response from server (HTTP ${res.status}).`);
+  }
+}
+
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...opts.headers };
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${API}${path}`, { ...opts, headers });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
+  const data = await readBody(res);
+  if (!res.ok) throw new Error(data.error || `Request failed (HTTP ${res.status})`);
   return data;
+}
+
+function notice(el, message, kind) {
+  el.textContent = message;
+  el.classList.remove("hidden", "is-error", "is-ok");
+  if (kind) el.classList.add(kind);
 }
 
 function showLogin() {
@@ -62,16 +101,79 @@ loginForm.addEventListener("submit", async (e) => {
   try {
     const data = await api("/admin/login", {
       method: "POST",
-      body: JSON.stringify({ email: loginEmail.value, password: loginPassword.value }),
+      body: JSON.stringify({
+        identifier: loginIdentifier.value.trim(),
+        password: loginPassword.value,
+      }),
     });
     token = data.token;
     localStorage.setItem("admin_token", token);
-    adminInfo.textContent = `${data.admin.name} (${data.admin.email})`;
+    const how = data.admin.phone ? ` (${data.admin.phone})` : ` (${data.admin.email})`;
+    adminInfo.textContent = `${data.admin.name}${how}`;
+    loginPassword.value = "";
     showDashboard();
     loadAll();
   } catch (err) {
     loginError.textContent = err.message;
     loginError.classList.remove("hidden");
+  }
+});
+
+// ── Password reset ───────────────────────────────────────────────
+function showOnly(form) {
+  for (const f of [loginForm, forgotForm, resetForm]) {
+    f.classList.toggle("hidden", f !== form);
+  }
+}
+
+$("#link-forgot").addEventListener("click", () => {
+  forgotMessage.classList.add("hidden");
+  showOnly(forgotForm);
+  forgotIdentifier.focus();
+});
+
+$("#link-back-login").addEventListener("click", () => showOnly(loginForm));
+
+forgotForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  forgotMessage.classList.add("hidden");
+  try {
+    const data = await api("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ identifier: forgotIdentifier.value.trim() }),
+    });
+    notice(forgotMessage, data.message, "is-ok");
+    forgotForm.querySelector('input[type="text"]').value = "";
+  } catch (err) {
+    notice(forgotMessage, err.message, "is-error");
+  }
+});
+
+resetForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  resetMessage.classList.add("hidden");
+  if (resetPassword.value !== resetConfirm.value) {
+    notice(resetMessage, "The two passwords do not match.", "is-error");
+    return;
+  }
+  const tokenFromUrl = new URLSearchParams(location.search).get("token");
+  if (!tokenFromUrl) {
+    notice(resetMessage, "This link is missing its token. Request a new one.", "is-error");
+    return;
+  }
+  try {
+    const data = await api("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token: tokenFromUrl, password: resetPassword.value }),
+    });
+    // Drop the token from the address bar so a refresh cannot replay it.
+    history.replaceState(null, "", location.pathname);
+    notice(resetMessage, data.message, "is-ok");
+    resetPassword.value = "";
+    resetConfirm.value = "";
+    setTimeout(() => showOnly(loginForm), 1200);
+  } catch (err) {
+    notice(resetMessage, err.message, "is-error");
   }
 });
 
@@ -116,6 +218,7 @@ function renderResidents() {
       <div class="actions">
         <button class="btn btn-sm" onclick="showResidentQr('${r.id}')">QR</button>
         <button class="btn btn-sm" onclick="editResident('${r.id}')">Edit</button>
+        <button class="btn btn-sm" onclick="resetResidentPassword('${r.id}')">Reset password</button>
         <button class="btn btn-danger btn-sm" onclick="deleteResident('${r.id}')">Delete</button>
       </div>
     </div>`
@@ -131,9 +234,11 @@ function renderAdmins() {
     <div class="data-card">
       <div class="info">
         <h3>${esc(a.name)}</h3>
-        <p>${esc(a.email)}</p>
+        <p>${esc(a.email)}${a.phone ? " · " + esc(a.phone) : " · no phone set"}</p>
       </div>
       <div class="actions">
+        <button class="btn btn-sm" onclick="editAdmin('${a.id}')">Edit</button>
+        <button class="btn btn-sm" onclick="resetAdminPassword('${a.id}')">Reset password</button>
         <button class="btn btn-danger btn-sm" onclick="deleteAdmin('${a.id}')">Delete</button>
       </div>
     </div>`
@@ -221,12 +326,105 @@ window.deleteResident = async (id) => {
   loadAll();
 };
 
+/**
+ * Hands a resident a fresh password.
+ *
+ * There is nothing else that can work: the server only ever stores a bcrypt
+ * hash, and a resident with no email on file cannot receive a self-service
+ * link. So this confirms first, then shows the generated value on screen to be
+ * read over the phone - it is never emailed and never stored in the clear.
+ */
+window.resetResidentPassword = async (id) => {
+  const r = residents.find((x) => x.id === id);
+  if (!r) return;
+  if (!confirm(`Set a new password for ${r.name} (Unit ${r.unit})?\n\nTheir current password will stop working.`)) {
+    return;
+  }
+  try {
+    const data = await api(`/admin/residents/${id}/reset-password`, { method: "POST" });
+    openModal(`New password for ${data.resident.name}`, [
+      {
+        name: "generated",
+        label: "Give them this password (it is not saved anywhere)",
+        type: "text",
+        required: false,
+        placeholder: data.password,
+      },
+    ], async () => {});
+    const input = modalForm.querySelector('[name="generated"]');
+    input.value = data.password;
+    input.readOnly = true;
+    input.classList.add("temp-password");
+    input.focus();
+    input.select();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
 $("#btn-add-admin").onclick = () =>
   openModal("Add Admin", [
     { name: "name", label: "Name" },
     { name: "email", label: "Email", type: "email" },
+    { name: "phone", label: "Phone (can sign in with this)", type: "tel", required: false, placeholder: "e.g. +65 9001 0001" },
     { name: "password", label: "Password", type: "password" },
   ], async (body) => { await api("/admin/admins", { method: "POST", body: JSON.stringify(body) }); });
+
+window.editAdmin = (id) => {
+  const a = admins.find((x) => x.id === id);
+  if (!a) return;
+  editingType = "admin";
+  editingId = id;
+  openModal("Edit Admin", [
+    { name: "name", label: "Name" },
+    { name: "email", label: "Email", type: "email" },
+    { name: "phone", label: "Phone (can sign in with this)", type: "tel" },
+    { name: "password", label: "New Password (blank = keep)", type: "password", required: false },
+  ], async (body) => {
+    // phone is sent even when blank: an empty value is how the number is
+    // cleared, which the server treats as a change rather than a no-op.
+    await api(`/admin/admins/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: body.name,
+        email: body.email,
+        phone: body.phone || "",
+        ...(body.password ? { password: body.password } : {}),
+      }),
+    });
+  });
+  setTimeout(() => {
+    modalForm.querySelector('[name="name"]').value = a.name;
+    modalForm.querySelector('[name="email"]').value = a.email;
+    modalForm.querySelector('[name="phone"]').value = a.phone || "";
+  }, 0);
+};
+
+window.resetAdminPassword = async (id) => {
+  const a = admins.find((x) => x.id === id);
+  if (!a) return;
+  if (!confirm(`Set a new password for ${a.name}?\n\nTheir current password will stop working.`)) return;
+  try {
+    const data = await api(`/admin/admins/${id}/reset-password`, { method: "POST" });
+    openModal(`New password for ${data.admin.name}`, [
+      {
+        name: "generated",
+        label: "Give them this password (it is not saved anywhere)",
+        type: "text",
+        required: false,
+        placeholder: data.password,
+      },
+    ], async () => {});
+    const input = modalForm.querySelector('[name="generated"]');
+    input.value = data.password;
+    input.readOnly = true;
+    input.classList.add("temp-password");
+    input.focus();
+    input.select();
+  } catch (err) {
+    alert(err.message);
+  }
+};
 
 window.deleteAdmin = async (id) => {
   if (!confirm("Delete this admin?")) return;
@@ -328,7 +526,15 @@ function esc(s) {
 // ── Boot ─────────────────────────────────────────────────────────
 loadQrOpts();
 
-if (token) {
+// A reset link wins over a stored session: the point is to set a new
+// password, and leaving a half-signed-in dashboard behind would hide the form.
+const resetToken = new URLSearchParams(location.search).get("token");
+if (resetToken) {
+  token = null;
+  localStorage.removeItem("admin_token");
+  showLogin();
+  showOnly(resetForm);
+} else if (token) {
   showDashboard();
   loadAll();
 } else {

@@ -1,7 +1,29 @@
+﻿/**
+ * Reads a response without assuming it is JSON.
+ *
+ * A stopped server, or a dev proxy in front of a stopped server, answers
+ * 502/504 with an empty body. res.json() on that throws "Unexpected end of
+ * JSON input", which says nothing about what actually failed and here would be
+ * reported to a visitor standing at a door as "Resident Not Found".
+ */
+async function readBody(res) {
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) {
+      throw new Error(`Server unreachable (HTTP ${res.status}). Is the intercom server running?`);
+    }
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Unexpected response from server (HTTP ${res.status}).`);
+  }
+}
 const API_BASE = window.location.origin + "/api";
 const WS_BASE = window.location.origin.replace(/^http/i, "ws");
 
-// ── State ───────────────────────────────────────────────────────────
+// â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let residentId = null;
 let visitorToken = null;
 let sessionId = null;
@@ -14,7 +36,7 @@ let isAutoCall = false;
 let audioOnly = false;
 let nativeBridge = false;
 
-// ── Audio State ─────────────────────────────────────────────────────
+// â”€â”€ Audio State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let audioContext = null;
 let audioWorkletNode = null;
 let remoteAudioQueue = [];
@@ -30,19 +52,19 @@ let speakerMode = (() => {
   }
 })();
 
-// ── Video Frame Capture ────────────────────────────────────────────
+// â”€â”€ Video Frame Capture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let videoCaptureInterval = null;
 let offscreenVideo = null;
 let captureCanvas = null;
 let captureCtx = null;
 
-// ── WebRTC State ────────────────────────────────────────────────────
+// â”€â”€ WebRTC State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let webRtcActive = false;
 let webRtcAnswerReceived = false;
 let webRtcOfferRetries = 0;
 let webRtcFallbackTimer = null;
 
-// ── Resident Media State ────────────────────────────────────────────
+// â”€â”€ Resident Media State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let residentMediaSucceeded = false;
 let residentMediaInProgress = false;
 let mediaDiag = () => "Secure: ? | mediaDevices: ?";
@@ -53,7 +75,7 @@ let silenceCleanup = null;        // disposes the silent placeholder track
 let callPhase = "none";
 let webRtcNegotiationRetries = 0;
 
-// ── DOM Elements ────────────────────────────────────────────────────
+// â”€â”€ DOM Elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const $ = (sel) => document.querySelector(sel);
 const headerTitle = $("#header-title");
 const headerSubtitle = $("#header-subtitle");
@@ -69,7 +91,7 @@ const btnEndCall = $("#btn-end-call");
 const btnToggleSpeaker = $("#btn-toggle-speaker");
 const remoteAudio = $("#remote-audio");
 
-// ── Native Bridge ───────────────────────────────────────────────────
+// â”€â”€ Native Bridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.handleNativeSignal = function (type, data) {
   console.log("[Bridge] Received:", type);
   let msg;
@@ -91,7 +113,7 @@ window.handleNativeSignal = function (type, data) {
   handleSignalingMessage(msg);
 };
 
-// ── Status + resident media helpers ────────────────────────────────
+// â”€â”€ Status + resident media helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function setStatus(text) {
   callStatusText.textContent = text;
   console.log("[Status]", text);
@@ -108,7 +130,7 @@ function keepTryingForMedia() {
 
 // A low-volume oscillator track keeps the audio m-line "sendrecv" in the
 // SDP answer even before the real mic is available. When the mic arrives,
-// replaceTrack() swaps it in — no renegotiation needed, audio flows both ways.
+// replaceTrack() swaps it in â€” no renegotiation needed, audio flows both ways.
 function createSilentAudioTrack() {
   try {
     const ctx = new AudioContext();
@@ -144,7 +166,7 @@ function attachResidentAudio() {
   }
 }
 
-// ── Init ────────────────────────────────────────────────────────────
+// â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let initDone = false;
 
 async function init() {
@@ -163,7 +185,7 @@ async function init() {
   try {
     const res = await fetch(`${API_BASE}/residents/${residentId}/directory`);
     if (!res.ok) throw new Error("Resident not found");
-    const data = await res.json();
+    const data = await readBody(res);
 
     headerTitle.textContent = data.resident.name;
     headerSubtitle.textContent = `Unit ${data.resident.unit}`;
@@ -197,24 +219,24 @@ async function init() {
     console.log(`[Media] ${mediaDiag()}`);
 
     // Mic/camera start is deferred out of page-load and retried until it
-    // succeeds (hardware can be momentarily busy → NotReadableError). The
+    // succeeds (hardware can be momentarily busy â†’ NotReadableError). The
     // native side also re-triggers this from onPageFinished/onResume.
     window.startResidentMedia = startResidentMedia;
     setTimeout(startResidentMedia, 150);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && residentMediaEnabled && !residentMediaSucceeded) {
-        console.log("[Media] Visibility change → retrying media acquisition");
+        console.log("[Media] Visibility change â†’ retrying media acquisition");
         startResidentMedia();
       }
     });
     return;
   }
 
-  // Normal flow — create visitor session and connect WebSocket
+  // Normal flow â€” create visitor session and connect WebSocket
   const sessionRes = await fetch(`${API_BASE}/residents/${residentId}/visitor-session`, {
     method: "POST",
   });
-  const sessionData = await sessionRes.json();
+  const sessionData = await readBody(sessionRes);
   visitorToken = sessionData.token;
   sessionId = sessionData.sessionId;
 
@@ -228,7 +250,7 @@ async function init() {
   }
 }
 
-// ── Directory ───────────────────────────────────────────────────────
+// â”€â”€ Directory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let allResidents = [];
 
 function renderResidents(residents) {
@@ -266,7 +288,7 @@ function filterResidents(query) {
   }
 }
 
-// ── WebSocket ───────────────────────────────────────────────────────
+// â”€â”€ WebSocket â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function connectWebSocket() {
   const wsUrl = `${WS_BASE}/ws`;
   console.log("[WS] Connecting to", wsUrl);
@@ -296,7 +318,7 @@ function connectWebSocket() {
     window.__diag.wsCloseCount++;
     window.__diag.wsCloseReason = `${event.code}/${event.reason || "none"}`;
     window.__diag.wsClosedAt = Date.now();
-    console.warn(`[WS] Closed code=${event.code} reason="${event.reason}" — reconnecting in 2s`);
+    console.warn(`[WS] Closed code=${event.code} reason="${event.reason}" â€” reconnecting in 2s`);
     cleanupAudio();
     if (targetSessionId) {
       callStatusText.textContent = "Connection lost";
@@ -342,7 +364,7 @@ function sendBinaryVideo(jpegDataUrl) {
   }
 }
 
-// ── Audio Over WebSocket ────────────────────────────────────────────
+// â”€â”€ Audio Over WebSocket â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const WIRE_RATE = 16000;
 let nextPlayTime = 0;
 window.__audioStats = { sent: 0, received: 0, backlog: 0, mode: "idle", audioprocess: 0 };
@@ -461,7 +483,7 @@ function errName(e) {
 }
 
 // Mic-only acquisition. On Android WebView, requesting video+audio together
-// makes the WHOLE call fail with NotReadableError when the CAMERA is busy —
+// makes the WHOLE call fail with NotReadableError when the CAMERA is busy â€”
 // even though the mic itself is free. Voice should only ever depend on audio.
 async function getAudioOnlyStream() {
   const audioC = {
@@ -512,7 +534,7 @@ async function startResidentMedia() {
         residentMediaSucceeded = true;
         attachResidentAudio();
         setStatus(`${mediaDiag()} | Ready`);
-        console.log(`[Media] Mic acquired (attempt ${attempt}${lastError ? " — recovered from " + errName(lastError) : ""})`);
+        console.log(`[Media] Mic acquired (attempt ${attempt}${lastError ? " â€” recovered from " + errName(lastError) : ""})`);
         capturePreviewCamera();
         return;
       } catch (err) {
@@ -569,7 +591,7 @@ async function startAudioMode() {
     source.connect(processor);
 
     // Keep the processor in the rendering graph. A ScriptProcessor with no
-    // output connection is a dead-end sink — Chrome never schedules
+    // output connection is a dead-end sink â€” Chrome never schedules
     // onaudioprocess for it, so no frames would ever be captured/sent.
     const silentTap = audioContext.createGain();
     silentTap.gain.value = 0;
@@ -678,7 +700,7 @@ function cleanupAudio() {
   }
 }
 
-// ── Video Frame Capture ────────────────────────────────────────────
+// â”€â”€ Video Frame Capture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function startVideoCapture() {
   if (videoCaptureInterval || audioOnly) return;
 
@@ -715,7 +737,7 @@ function stopVideoCapture() {
   captureCtx = null;
 }
 
-// ── Auto-Call (from QR ?call= parameter) ───────────────────────────
+// â”€â”€ Auto-Call (from QR ?call= parameter) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function waitForWsAndCall(residentId, attempts = 0) {
   if (ws?.readyState === WebSocket.OPEN) {
     const resident = allResidents.find((r) => r.id === residentId);
@@ -729,18 +751,18 @@ function waitForWsAndCall(residentId, attempts = 0) {
   }
 }
 
-// ── Signaling ───────────────────────────────────────────────────────
+// â”€â”€ Signaling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function handleSignalingMessage(msg) {
   switch (msg.type) {
     case "call-accepted":
       targetSessionId = msg.from;
-      callStatusText.textContent = "Connected — establishing audio...";
+      callStatusText.textContent = "Connected â€” establishing audio...";
       pulseRing.classList.add("connected");
       if (nativeBridge && audioOnly) {
         // Resident WebView (callee): the visitor sends the offer, just wait.
-        callStatusText.textContent = "Ready — waiting for voice connection...";
+        callStatusText.textContent = "Ready â€” waiting for voice connection...";
       } else {
-        // Web visitor caller: voice travels over the WebSocket PCM channel —
+        // Web visitor caller: voice travels over the WebSocket PCM channel â€”
         // the resident app answers with native AudioRecord/AudioTrack.
         startAudioMode();
       }
@@ -783,7 +805,7 @@ function handleSignalingMessage(msg) {
   }
 }
 
-// ── WebRTC (kept for video calls between browsers) ──────────────────
+// â”€â”€ WebRTC (kept for video calls between browsers) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -936,7 +958,7 @@ function handleWebRtcFailure() {
   teardownPeerConnection();
   if (webRtcNegotiationRetries < 3) {
     webRtcNegotiationRetries++;
-    setStatus(`Voice connection failed — retrying (${webRtcNegotiationRetries}/3)...`);
+    setStatus(`Voice connection failed â€” retrying (${webRtcNegotiationRetries}/3)...`);
     console.warn("[WebRTC] Re-negotiating");
     setTimeout(() => {
       if (callPhase !== "none") startWebRTCCall();
@@ -971,7 +993,7 @@ function scheduleOfferRetry() {
     const pc = peerConnection;
     if (pc && pc.signalingState === "have-local-offer") {
       webRtcOfferRetries++;
-      console.log(`[WebRTC] No answer yet (retry ${webRtcOfferRetries}) — resending offer`);
+      console.log(`[WebRTC] No answer yet (retry ${webRtcOfferRetries}) â€” resending offer`);
       createAndSendOffer();
       scheduleOfferRetry();
     }
@@ -1018,7 +1040,7 @@ async function handleRemoteIceCandidate(candidate) {
   }
 }
 
-// ── End Call ────────────────────────────────────────────────────────
+// â”€â”€ End Call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 btnEndCall.addEventListener("click", () => {
   send({ type: "call-ended", to: targetSessionId });
   endCall();
@@ -1072,14 +1094,14 @@ function endCall(reason) {
   window.history.replaceState({}, "", url);
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
 }
 
-// ── Boot ────────────────────────────────────────────────────────────
+// â”€â”€ Boot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.__diag = {
   bootAt: Date.now(),
   wsOpenAt: 0,

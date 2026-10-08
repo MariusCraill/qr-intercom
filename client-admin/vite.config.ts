@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import fs from "fs";
 import path from "path";
+import { backendProxy } from "../dev-backend";
 
 const certDir = path.resolve(__dirname, "../certs");
 
@@ -17,11 +18,6 @@ export default defineConfig({
       key: fs.readFileSync(path.join(certDir, "key.pem")),
       cert: fs.readFileSync(path.join(certDir, "cert.pem")),
     },
-    proxy: {
-      "/api": {
-        target: "https://localhost:3000",
-        secure: false,
-      },
-    },
+    proxy: backendProxy(path.resolve(__dirname, "..")),
   },
 });

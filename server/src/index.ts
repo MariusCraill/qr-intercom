@@ -37,17 +37,17 @@ const server = sslOptions ? https.createServer(sslOptions, app) : null;
 // Shares the same Express app and the same WebRTC signaling state.
 const httpServer = http.createServer(app);
 
-// ── Database ────────────────────────────────────────────────────────
+// â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const db = initializeDatabase(config.databasePath);
 console.log(`[DB] Initialized at ${config.databasePath}`);
 
-// ── WebRTC Signaling ────────────────────────────────────────────────
+// â”€â”€ WebRTC Signaling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const listenServers: NetServer[] = [httpServer];
 if (server) listenServers.push(server);
 const signaling = new SignalingServer(...listenServers);
 console.log(`[WS] Signaling server attached to /ws (${server ? "HTTPS + " : ""}HTTP backend)`);
 
-// ── Middleware ───────────────────────────────────────────────────────
+// â”€â”€ Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.set("trust proxy", config.trustProxy);
 app.disable("x-powered-by");
 
@@ -79,13 +79,13 @@ app.use((_req: express.Request, res: express.Response, next: express.NextFunctio
 app.use(cors({ origin: config.corsOrigins, credentials: true }));
 app.use(express.json({ limit: "256kb" }));
 
-// ── REST API ────────────────────────────────────────────────────────
+// â”€â”€ REST API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use("/api", createApiRouter(db, config));
 
-// ── Root landing: serve the resident portal so the funnel URL works ──
+// â”€â”€ Root landing: serve the resident portal so the funnel URL works â”€â”€
 app.get("/", (_req, res) => res.redirect("/resident"));
 
-// ── Serve static builds if present ──────────────────────────────────
+// â”€â”€ Serve static builds if present â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const visitorDist = path.resolve("../client-visitor/dist");
 const residentDist = path.resolve("../client-resident/dist");
 const adminDist = path.resolve("../client-admin/dist");
@@ -100,7 +100,7 @@ if (fs.existsSync(adminDist)) {
   app.use("/admin", express.static(adminDist));
 }
 
-// ── Catch-all for SPA routes ────────────────────────────────────────
+// â”€â”€ Catch-all for SPA routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get("/visit/*", (_req, res) => {
   const indexPath = path.join(visitorDist, "index.html");
   if (fs.existsSync(indexPath)) {
@@ -128,7 +128,7 @@ app.get("/admin/*", (_req, res) => {
   }
 });
 
-// ── Error handling ──────────────────────────────────────────────────
+// â”€â”€ Error handling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Must be registered after every route. Without this, Express's default
 // handler returns the full stack trace to the client, which leaks absolute
 // filesystem paths and the fact that a table/column is missing.
@@ -145,7 +145,7 @@ app.use(
   },
 );
 
-// ── Start ───────────────────────────────────────────────────────────
+// â”€â”€ Start â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // A listener that cannot bind must never take the process down: HTTP_PORT is
 // the path the phones and browsers actually use, so it has to survive whatever
 // happens to the optional LAN HTTPS port.
@@ -162,13 +162,13 @@ const onListenError = (label: string, port: number) => (err: NodeJS.ErrnoExcepti
 };
 
 console.log(`
-╔══════════════════════════════════════════════════════╗
-║         QR Intercom Server v1.0.0                    ║
-║                                                      ║
-║  HTTPS/WSS: https://${config.host}:${config.port}             ║
-║  HTTP:      http://${config.host}:${config.httpPort} (funnel backend)   ║
-║  DB:       ${config.databasePath.padEnd(36)}║
-╚══════════════════════════════════════════════════════╝
+â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+â•‘         QR Intercom Server v1.0.0                    â•‘
+â•‘                                                      â•‘
+â•‘  HTTPS/WSS: https://${config.host}:${config.port}             â•‘
+â•‘  HTTP:      http://${config.host}:${config.httpPort} (funnel backend)   â•‘
+â•‘  DB:       ${config.databasePath.padEnd(36)}â•‘
+â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   `);
 
 if (server) {
@@ -183,7 +183,7 @@ httpServer.listen(config.httpPort, config.host, () => {
   console.log(`[HTTP] Funnel backend listening on http://${config.host}:${config.httpPort}`);
 });
 
-// ── Graceful shutdown ───────────────────────────────────────────────
+// â”€â”€ Graceful shutdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const closeAll = () => {
   db.close();
   if (server) server.close(() => process.exit(0));
@@ -200,7 +200,7 @@ process.on("SIGTERM", () => {
   closeAll();
 });
 
-// ── Last-resort crash guards ─────────────────────────────────────────
+// â”€â”€ Last-resort crash guards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Async route rejections are handled per-request by ah() in routes/api.ts.
 // These catch anything that still escapes - a stray promise, a throw outside
 // the request cycle. An unhandled rejection in either takes the whole process

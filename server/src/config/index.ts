@@ -19,6 +19,20 @@ export interface Config {
   /** Opt in to X-Forwarded-For. Off by default so req.ip cannot be spoofed
    *  to bypass the login rate limiter. Turn on only behind a trusted proxy. */
   trustProxy: boolean;
+  /** Lifetime of a password-reset link. */
+  resetTokenTtlMin: number;
+  /** Where a password-reset link should send the person: origin only, no path.
+   *  The resident and admin clients each read ?token= on load. */
+  publicBaseUrl: string;
+  /** Null when SMTP_HOST is unset, which makes resets print to the console. */
+  smtp: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user?: string;
+    pass?: string;
+    from: string;
+  } | null;
 }
 
 /**
@@ -66,5 +80,17 @@ export function loadConfig(): Config {
     turnServers: JSON.parse(process.env.TURN_SERVERS || "[]"),
     corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:5174,https://desktop-obtdcvt.tail973ab1.ts.net").split(","),
     trustProxy: process.env.TRUST_PROXY === "true",
+    resetTokenTtlMin: Math.max(1, parseInt(process.env.RESET_TOKEN_TTL_MIN || "30", 10) || 30),
+    publicBaseUrl: (process.env.PUBLIC_BASE_URL || "http://localhost:3010").replace(/\/+$/, ""),
+    smtp: process.env.SMTP_HOST
+      ? {
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || "587", 10) || 587,
+          secure: process.env.SMTP_SECURE === "true",
+          user: process.env.SMTP_USER || undefined,
+          pass: process.env.SMTP_PASS || undefined,
+          from: process.env.SMTP_FROM || process.env.SMTP_USER || "intercom@localhost",
+        }
+      : null,
   };
 }

@@ -1,7 +1,7 @@
-const API_BASE = window.location.origin + "/api";
+﻿const API_BASE = window.location.origin + "/api";
 const WS_BASE = window.location.origin.replace(/^http/i, "ws");
 
-// ── State ───────────────────────────────────────────────────────────
+// â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let authToken = null;
 let residentInfo = null;
 let ws = null;
@@ -10,8 +10,36 @@ let localStream = null;
 let currentCallId = null;
 let visitorSessionId = null;
 
-// ── DOM Elements ────────────────────────────────────────────────────
+// â”€â”€ DOM Elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const $ = (sel) => document.querySelector(sel);
+
+/**
+ * Reads a response without assuming it is JSON.
+ *
+ * A stopped server, or a dev proxy in front of a stopped server, answers
+ * 502/504 with an empty body. res.json() on that throws "Unexpected end of
+ * JSON input", which carries no information about what actually failed.
+ */
+async function readBody(res) {
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) {
+      throw new Error(`Server unreachable (HTTP ${res.status}). Is the intercom server running?`);
+    }
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Unexpected response from server (HTTP ${res.status}).`);
+  }
+}
+
+function notice(el, message, kind) {
+  el.textContent = message;
+  el.classList.remove("hidden", "is-error", "is-ok");
+  if (kind) el.classList.add(kind);
+}
 const loginScreen = $("#login-screen");
 const dashboard = $("#dashboard");
 const loginForm = $("#login-form");
@@ -44,7 +72,7 @@ const accountSuccess = $("#account-success");
 const ringtoneAudio = $("#ringtone-audio");
 const remoteAudio = $("#remote-audio");
 
-// ── Ringtone (Web Audio API) ─────────────────────────────────────
+// â”€â”€ Ringtone (Web Audio API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let ringtoneCtx = null;
 let ringtoneInterval = null;
 
@@ -88,7 +116,7 @@ function stopRingtone() {
   }
 }
 
-// ── Login ───────────────────────────────────────────────────────────
+// â”€â”€ Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function completeAuth(data) {
   authToken = data.token;
   residentInfo = data.resident;
@@ -101,16 +129,16 @@ loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   loginError.classList.add("hidden");
 
-  const phone = $("#login-phone").value;
+  const identifier = $("#login-identifier").value.trim();
   const password = $("#login-password").value;
 
   try {
     const res = await fetch(`${API_BASE}/auth/resident-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, password }),
+      body: JSON.stringify({ identifier, password }),
     });
-    const data = await res.json();
+    const data = await readBody(res);
     if (!res.ok) throw new Error(data.error || "Login failed");
     await completeAuth(data);
   } catch (err) {
@@ -119,7 +147,7 @@ loginForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ── Register ───────────────────────────────────────────────────────
+// â”€â”€ Register â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showRegister() {
   loginError.classList.add("hidden");
   registerError.classList.add("hidden");
@@ -129,6 +157,90 @@ function showRegister() {
   registerLink.classList.add("hidden");
   loginSubtitle.textContent = "Create your resident account";
 }
+
+// â”€â”€ Password reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const forgotForm = $("#forgot-form");
+const forgotMessage = $("#forgot-message");
+const resetForm = $("#reset-form");
+const resetMessage = $("#reset-message");
+
+function showForgot() {
+  loginError.classList.add("hidden");
+  registerError.classList.add("hidden");
+  forgotMessage.classList.add("hidden");
+  loginForm.classList.add("hidden");
+  registerForm.classList.add("hidden");
+  forgotForm.classList.remove("hidden");
+  loginLink.classList.add("hidden");
+  registerLink.classList.add("hidden");
+  loginSubtitle.textContent = "Reset your password";
+}
+
+function showResetForm() {
+  loginError.classList.add("hidden");
+  registerError.classList.add("hidden");
+  resetMessage.classList.add("hidden");
+  loginForm.classList.add("hidden");
+  registerForm.classList.add("hidden");
+  forgotForm.classList.add("hidden");
+  resetForm.classList.remove("hidden");
+  loginLink.classList.add("hidden");
+  registerLink.classList.add("hidden");
+  loginSubtitle.textContent = "Choose a new password";
+}
+
+$("#link-forgot").addEventListener("click", showForgot);
+
+forgotForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  forgotMessage.classList.add("hidden");
+  const identifier = $("#forgot-identifier").value.trim();
+  try {
+    const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier }),
+    });
+    const data = await readBody(res);
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    notice(forgotMessage, data.message, "is-ok");
+    $("#forgot-identifier").value = "";
+  } catch (err) {
+    notice(forgotMessage, err.message, "is-error");
+  }
+});
+
+resetForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  resetMessage.classList.add("hidden");
+  const password = $("#reset-password").value;
+  if (password !== $("#reset-confirm").value) {
+    notice(resetMessage, "The two passwords do not match.", "is-error");
+    return;
+  }
+  const token = new URLSearchParams(location.search).get("token");
+  if (!token) {
+    notice(resetMessage, "This link is missing its token. Request a new one.", "is-error");
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    });
+    const data = await readBody(res);
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    // Drop the token so a refresh cannot replay a spent link.
+    history.replaceState(null, "", location.pathname);
+    notice(resetMessage, data.message, "is-ok");
+    $("#reset-password").value = "";
+    $("#reset-confirm").value = "";
+    setTimeout(showLoginForm, 1200);
+  } catch (err) {
+    notice(resetMessage, err.message, "is-error");
+  }
+});
 
 function showLoginForm() {
   loginError.classList.add("hidden");
@@ -161,7 +273,7 @@ registerForm.addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    const data = await readBody(res);
     if (!res.ok) throw new Error(data.error || "Registration failed");
     await completeAuth(data);
   } catch (err) {
@@ -170,8 +282,16 @@ registerForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ── Init from stored session ────────────────────────────────────────
+// â”€â”€ Init from stored session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function initFromStorage() {
+  // A reset link wins over a stored session: the link's whole job is to set a
+  // new password, and a live dashboard would hide the form behind it.
+  if (new URLSearchParams(location.search).get("token")) {
+    localStorage.removeItem("intercom_token");
+    localStorage.removeItem("intercom_resident");
+    showResetForm();
+    return;
+  }
   const stored = localStorage.getItem("intercom_token");
   const storedResident = localStorage.getItem("intercom_resident");
   if (stored && storedResident) {
@@ -181,7 +301,7 @@ function initFromStorage() {
   }
 }
 
-// ── Logout ─────────────────────────────────────────────────────────
+// â”€â”€ Logout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 btnLogout.addEventListener("click", () => {
   if (ws) ws.close();
   stopRingtone();
@@ -194,7 +314,7 @@ btnLogout.addEventListener("click", () => {
   loginScreen.classList.remove("hidden");
 });
 
-// ── Account Edit ───────────────────────────────────────────────────
+// â”€â”€ Account Edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 btnAccount.addEventListener("click", () => {
   $("#acct-name").value = residentInfo.name || "";
   $("#acct-phone").value = "";
@@ -245,7 +365,7 @@ accountForm.addEventListener("submit", async (e) => {
       },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    const data = await readBody(res);
     if (!res.ok) throw new Error(data.error || "Update failed");
 
     residentInfo.name = body.name;
@@ -261,7 +381,7 @@ accountForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ── Dashboard ───────────────────────────────────────────────────────
+// â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function showDashboard() {
   loginScreen.classList.add("hidden");
   dashboard.classList.remove("hidden");
@@ -313,7 +433,7 @@ function showActiveCall() {
   activeCall.classList.remove("hidden");
 }
 
-// ── WebSocket ───────────────────────────────────────────────────────
+// â”€â”€ WebSocket â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function connectWebSocket() {
   const wsUrl = `${WS_BASE}/ws`;
   console.log("[WS] Connecting to", wsUrl);
@@ -347,7 +467,7 @@ function send(msg) {
   }
 }
 
-// ── Signaling ───────────────────────────────────────────────────────
+// â”€â”€ Signaling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function handleSignalingMessage(msg) {
   switch (msg.type) {
     case "call-request":
@@ -370,7 +490,7 @@ function handleSignalingMessage(msg) {
   }
 }
 
-// ── Accept / Decline ────────────────────────────────────────────────
+// â”€â”€ Accept / Decline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 btnAccept.addEventListener("click", async () => {
   stopRingtone();
   send({ type: "call-accepted", to: currentCallId });
@@ -384,7 +504,7 @@ btnDecline.addEventListener("click", () => {
   endCall();
 });
 
-// ── WebRTC ──────────────────────────────────────────────────────────
+// â”€â”€ WebRTC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -446,7 +566,7 @@ async function handleRemoteIceCandidate(candidate) {
   }
 }
 
-// ── End Call ────────────────────────────────────────────────────────
+// â”€â”€ End Call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 btnEndCall.addEventListener("click", () => {
   send({ type: "call-ended", to: currentCallId });
   endCall();
@@ -470,7 +590,7 @@ function endCall() {
   showIdle();
 }
 
-// ── Unlock ─────────────────────────────────────────────────────────
+// â”€â”€ Unlock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 btnUnlock.addEventListener("click", async () => {
   btnUnlock.disabled = true;
   btnUnlock.textContent = "Unlocking...";
@@ -503,7 +623,7 @@ btnUnlock.addEventListener("click", async () => {
   }
 });
 
-// ── Push Notifications ──────────────────────────────────────────────
+// â”€â”€ Push Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function registerServiceWorker() {
   if ("serviceWorker" in navigator && "PushManager" in window) {
     try {
@@ -557,5 +677,5 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-// ── Boot ────────────────────────────────────────────────────────────
+// â”€â”€ Boot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 initFromStorage();

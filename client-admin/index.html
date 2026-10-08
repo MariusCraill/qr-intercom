@@ -14,10 +14,29 @@
         <h1>Admin Portal</h1>
         <p class="subtitle">Manage intercom residents</p>
         <form id="login-form">
-          <input type="email" id="login-email" placeholder="Admin email" required />
-          <input type="password" id="login-password" placeholder="Password" required />
+          <input type="text" id="login-identifier" placeholder="Phone number or email" autocomplete="username" required />
+          <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
           <button type="submit" class="btn btn-primary">Sign In</button>
           <p id="login-error" class="error-text hidden"></p>
+          <p class="card-link"><button type="button" class="link-btn" id="link-forgot">Forgot your password?</button></p>
+        </form>
+
+        <!-- Forgot password: step 1 -->
+        <form id="forgot-form" class="hidden">
+          <p class="subtitle">Enter your phone number or email and we will send a reset link.</p>
+          <input type="text" id="forgot-identifier" placeholder="Phone number or email" required />
+          <button type="submit" class="btn btn-primary">Send reset link</button>
+          <p id="forgot-message" class="notice-text hidden"></p>
+          <p class="card-link"><button type="button" class="link-btn" id="link-back-login">Back to sign in</button></p>
+        </form>
+
+        <!-- Reset password: step 2, reached from the emailed ?token= link -->
+        <form id="reset-form" class="hidden">
+          <p class="subtitle">Choose a new password.</p>
+          <input type="password" id="reset-password" placeholder="New password" autocomplete="new-password" required />
+          <input type="password" id="reset-confirm" placeholder="Confirm new password" autocomplete="new-password" required />
+          <button type="submit" class="btn btn-primary">Set password</button>
+          <p id="reset-message" class="notice-text hidden"></p>
         </form>
       </div>
     </section>

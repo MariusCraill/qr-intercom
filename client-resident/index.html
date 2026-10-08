@@ -17,10 +17,11 @@
         <p class="subtitle" id="login-subtitle">Sign in to receive visitor calls</p>
 
         <form id="login-form">
-          <input type="tel" id="login-phone" placeholder="Phone number" required />
-          <input type="password" id="login-password" placeholder="Password" required />
+          <input type="text" id="login-identifier" placeholder="Phone number or email" autocomplete="username" required />
+          <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
           <button type="submit" class="btn btn-primary">Sign In</button>
           <p id="login-error" class="error-text hidden"></p>
+          <p class="auth-switch"><span id="link-forgot" class="link">Forgot your password?</span></p>
         </form>
 
         <form id="register-form" class="hidden">
@@ -31,6 +32,21 @@
           <input type="password" id="reg-password" placeholder="Create password" required />
           <button type="submit" class="btn btn-primary">Create Account</button>
           <p id="register-error" class="error-text hidden"></p>
+        </form>
+
+        <!-- Forgot password: step 1 -->
+        <form id="forgot-form" class="hidden">
+          <input type="text" id="forgot-identifier" placeholder="Phone number or email" required />
+          <button type="submit" class="btn btn-primary">Send reset link</button>
+          <p id="forgot-message" class="notice-text hidden"></p>
+        </form>
+
+        <!-- Reset password: step 2, reached from the emailed ?token= link -->
+        <form id="reset-form" class="hidden">
+          <input type="password" id="reset-password" placeholder="New password" autocomplete="new-password" required />
+          <input type="password" id="reset-confirm" placeholder="Confirm new password" autocomplete="new-password" required />
+          <button type="submit" class="btn btn-primary">Set password</button>
+          <p id="reset-message" class="notice-text hidden"></p>
         </form>
 
         <div class="auth-switch">

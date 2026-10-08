@@ -1,4 +1,4 @@
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+﻿*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -9,7 +9,7 @@ body {
 
 #app { max-width: 800px; margin: 0 auto; padding: 20px; }
 
-/* ── Login ─────────────────────────────────────────────────────── */
+/* â”€â”€ Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
 
 .login-card {
@@ -26,7 +26,7 @@ body {
   color: #e2e8f0; font-size: .95rem;
 }
 
-/* ── Buttons ───────────────────────────────────────────────────── */
+/* â”€â”€ Buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .btn {
   background: #334155; color: #e2e8f0; border: none; border-radius: 8px;
   padding: 10px 20px; font-size: .95rem; cursor: pointer; transition: .15s;
@@ -39,7 +39,7 @@ body {
 .btn-sm { padding: 6px 14px; font-size: .85rem; }
 .btn-close { background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer; }
 
-/* ── Header / Tabs ─────────────────────────────────────────────── */
+/* â”€â”€ Header / Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
 .header h1 { font-size: 1.3rem; }
 .header .subtitle { width: 100%; color: #94a3b8; font-size: .85rem; }
@@ -63,7 +63,7 @@ body {
   color: #e2e8f0; padding: 6px 12px; font-size: .9rem;
 }
 
-/* ── Data list ─────────────────────────────────────────────────── */
+/* â”€â”€ Data list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .data-list { display: flex; flex-direction: column; gap: 8px; }
 
 .data-card {
@@ -74,7 +74,7 @@ body {
 .data-card .info p { color: #94a3b8; font-size: .8rem; }
 .data-card .actions { display: flex; gap: 6px; flex-shrink: 0; }
 
-/* ── Modal ─────────────────────────────────────────────────────── */
+/* â”€â”€ Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.6);
   display: flex; align-items: center; justify-content: center; z-index: 100;
@@ -95,7 +95,7 @@ body {
 
 .modal .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
 
-/* ── QR View ───────────────────────────────────────────────────── */
+/* â”€â”€ QR View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .qr-modal { text-align: center; }
 .qr-modal .qr-body { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 #qr-image { width: 300px; height: 300px; background: #fff; padding: 8px; border-radius: 8px; }
@@ -109,6 +109,26 @@ body {
 .qr-options label { display: inline-flex; align-items: center; gap: 4px; color: #e2e8f0; }
 .qr-options input { accent-color: #3b82f6; }
 
-/* ── Helpers ───────────────────────────────────────────────────── */
+/* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .error-text { color: #f87171; font-size: .85rem; margin-top: 8px; }
+
+/* Password reset: notice text carries both success and failure, so it is
+   colour-neutral by default and only tinted once JS knows which it is. */
+.notice-text { font-size: .85rem; margin-top: 8px; color: #94a3b8; }
+.notice-text.is-error { color: #f87171; }
+.notice-text.is-ok { color: #4ade80; }
+.card-link { margin-top: 14px; }
+.link-btn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: #60a5fa; font-size: .85rem; text-decoration: underline;
+}
+.link-btn:hover { color: #93c5fd; }
+
+/* A generated password has to be read aloud and typed back in, so it is
+   shown in a monospace face with enough contrast to survive a screenshot. */
+.temp-password {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem; letter-spacing: .06em; color: #4ade80;
+  word-break: break-all; margin: 8px 0;
+}
 .empty-text { color: #64748b; font-size: .9rem; text-align: center; padding: 30px; }
