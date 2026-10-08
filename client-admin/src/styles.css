@@ -36,6 +36,8 @@ body {
 .btn-primary:hover { background: #2563eb; }
 .btn-danger { background: #ef4444; }
 .btn-danger:hover { background: #dc2626; }
+.btn-whatsapp { background: #16a34a; }
+.btn-whatsapp:hover { background: #15803d; }
 .btn-sm { padding: 6px 14px; font-size: .85rem; }
 .btn-close { background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer; }
 

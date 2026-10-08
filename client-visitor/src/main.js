@@ -80,6 +80,7 @@ const $ = (sel) => document.querySelector(sel);
 const headerTitle = $("#header-title");
 const headerSubtitle = $("#header-subtitle");
 const searchInput = $("#search-input");
+const searchBox = $(".search-box");
 const residentList = $("#resident-list");
 const directorySection = $("#directory-section");
 const callSection = $("#call-section");
@@ -188,7 +189,9 @@ async function init() {
     const data = await readBody(res);
 
     headerTitle.textContent = data.resident.name;
-    headerSubtitle.textContent = `Unit ${data.resident.unit}`;
+    headerSubtitle.textContent = `Address: ${data.resident.unit}`;
+    // A QR code names exactly one resident, so there is nothing to search.
+    searchBox.classList.add("hidden");
     renderResidents([data.resident]);
   } catch (err) {
     console.error("[Init] Directory fetch failed:", err);
@@ -244,10 +247,11 @@ async function init() {
     connectWebSocket();
   }
 
-  if (autoCallResidentId) {
-    isAutoCall = true;
-    waitForWsAndCall(autoCallResidentId);
-  }
+  // The QR link carries ?call=, which used to ring the resident the moment the
+  // page loaded. The visitor now sees the name and address first and rings
+  // with the Call button, so a mis-scan or the wrong door never rings anyone.
+  // Starting from a tap also lets mobile browsers start audio playback, which
+  // they block when it is not triggered by the user.
 }
 
 // â”€â”€ Directory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -276,7 +280,7 @@ function filterResidents(query) {
     li.innerHTML = `
       <div class="resident-info">
         <span class="resident-name">${escapeHtml(r.name)}</span>
-        <span class="resident-unit">Unit ${escapeHtml(r.unit)}</span>
+        <span class="resident-unit">Address: ${escapeHtml(r.unit)}</span>
       </div>
       <button class="btn-call" data-resident-id="${r.id}">Call</button>
     `;
@@ -370,8 +374,27 @@ let nextPlayTime = 0;
 window.__audioStats = { sent: 0, received: 0, backlog: 0, mode: "idle", audioprocess: 0 };
 window.__audioContext = null;
 
+// Averages each output sample over the input samples it replaces. Plain
+// linear interpolation from 48 kHz down to 16 kHz folds everything above
+// 8 kHz back into the voice band, which is the harsh, hissy edge on the
+// visitor's voice.
+function downsampleF32(src, srcRate, dstRate) {
+  const ratio = srcRate / dstRate;
+  const outLen = Math.max(1, Math.floor(src.length / ratio));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(src.length, Math.floor((i + 1) * ratio));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += src[j];
+    out[i] = end > start ? sum / (end - start) : src[start] || 0;
+  }
+  return out;
+}
+
 function resampleF32(src, srcRate, dstRate) {
   if (srcRate === dstRate || src.length === 0) return src;
+  if (srcRate > dstRate) return downsampleF32(src, srcRate, dstRate);
   const ratio = srcRate / dstRate;
   const outLen = Math.max(1, Math.round((src.length * dstRate) / srcRate));
   const out = new Float32Array(outLen);
@@ -386,6 +409,37 @@ function resampleF32(src, srcRate, dstRate) {
     idx += ratio;
   }
   return out;
+}
+
+const PLAYOUT_DELAY_S = 0.1;
+
+// ── Echo gate ──
+// Level of the resident's voice that was most recently played, decaying
+// over time, compared against the visitor's own mic level.
+const ECHO_HOLD_MS = 200;     // keep the gate closed this long after the resident stops
+const ECHO_DUCK_GAIN = 0.15;  // mic level while the resident is talking
+let remoteLevel = 0;
+let remoteLevelAt = 0;
+
+function rms(buf) {
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  return buf.length ? Math.sqrt(sum / buf.length) : 0;
+}
+
+function noteRemoteLevel(buf) {
+  const level = rms(buf);
+  if (level > 0.01) {
+    remoteLevel = Math.max(level, remoteLevel * 0.9);
+    remoteLevelAt = performance.now();
+  }
+}
+
+function echoGateGain(micBuf) {
+  if (performance.now() - remoteLevelAt > ECHO_HOLD_MS) return 1;
+  // The visitor talking clearly over the resident (a lot louder than the
+  // echo would be) still goes through, so they can interrupt.
+  return rms(micBuf) > remoteLevel * 2 ? 1 : ECHO_DUCK_GAIN;
 }
 
 function floatToPcm16(chunk) {
@@ -580,10 +634,19 @@ async function startAudioMode() {
       window.__audioStats.audioprocess++;
       event.outputBuffer.getChannelData(0).fill(0);
       const inputData = event.inputBuffer.getChannelData(0);
+      // Copy: the input buffer is reused by the browser, and is scaled below.
       const resampled =
-        ctxRate === WIRE_RATE ? inputData : resampleF32(inputData, ctxRate, WIRE_RATE);
-      for (let i = 0; i < resampled.length; i++) {
-        resampled[i] = Math.tanh(resampled[i] * 1.4);
+        ctxRate === WIRE_RATE ? Float32Array.from(inputData) : resampleF32(inputData, ctxRate, WIRE_RATE);
+      // The mic is already level-controlled by the browser's autoGainControl.
+      // It used to be pushed through tanh(x * 1.4) on top of that, which
+      // clipped loud speech into distortion. Instead, while the resident's
+      // voice is coming out of this phone's speaker, the mic is turned down so
+      // that voice is not sent straight back as echo. Browsers do not
+      // echo-cancel audio played through Web Audio, which is how this path
+      // plays it, so nothing else stops the loop.
+      const gain = echoGateGain(resampled);
+      if (gain !== 1) {
+        for (let i = 0; i < resampled.length; i++) resampled[i] *= gain;
       }
       sendBinaryAudio(floatToPcm16(resampled));
     };
@@ -664,9 +727,11 @@ function playPcmChunk(rawInt16) {
     const floatOut =
       ctxRate === WIRE_RATE ? floatIn : resampleF32(floatIn, WIRE_RATE, ctxRate);
 
-    for (let i = 0; i < floatOut.length; i++) {
-      floatOut[i] = Math.tanh(floatOut[i] * 1.8);
-    }
+    // Playback used to go through tanh(x * 1.8): almost double the volume,
+    // clipped. That distorted the resident's voice and drove the speaker hard
+    // enough to feed back into the visitor's mic. Volume now comes from the
+    // Speaker button alone.
+    noteRemoteLevel(floatIn);
 
     const audioBuffer = audioContext.createBuffer(1, floatOut.length, ctxRate);
     audioBuffer.getChannelData(0).set(floatOut);
@@ -675,9 +740,11 @@ function playPcmChunk(rawInt16) {
     source.buffer = audioBuffer;
     source.connect(remoteDestNode || audioContext.destination);
 
+    // Restart ~100 ms ahead after an underrun. 20 ms was less than ordinary
+    // Wi-Fi/mobile jitter, so playback kept running dry and crackling.
     const now = audioContext.currentTime;
-    if (nextPlayTime < now - 0.05) {
-      nextPlayTime = now + 0.02;
+    if (nextPlayTime < now) {
+      nextPlayTime = now + PLAYOUT_DELAY_S;
     }
     source.start(nextPlayTime);
     nextPlayTime += audioBuffer.duration;

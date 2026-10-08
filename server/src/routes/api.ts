@@ -1,4 +1,7 @@
 import { Router, type Request, type Response } from "express";
+import fs from "node:fs";
+import path from "node:path";
+import jwt from "jsonwebtoken";
 import { randomInt } from "node:crypto";
 import type Database from "better-sqlite3";
 import { v4 as uuid } from "uuid";
@@ -607,6 +610,51 @@ export function createApiRouter(db: Database.Database, config: Config): Router {
   }));
 
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ List residents ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  // Resident Android app, so the admin console can send a resident a download
+  // link over WhatsApp. The person tapping the link has not installed the app
+  // yet and has nothing to sign in with, so the link carries its own signed,
+  // expiring token instead of being open to anyone who guesses the URL. It is
+  // signed with a key derived from JWT_SECRET, never the session key itself,
+  // so a download link can never be replayed as a login.
+  // It lives under /api because that is a path the funnel forwards.
+  const residentApkPath = path.resolve(
+    process.env.RESIDENT_APK_PATH || "../android-resident/app/build/outputs/apk/debug/app-debug.apk",
+  );
+  const apkLinkSecret = `${config.jwtSecret}:resident-apk-download`;
+  const APK_LINK_TTL = "7d";
+
+  router.get("/app/resident.apk", (req: Request, res: Response) => {
+    const t = typeof req.query.t === "string" ? req.query.t : "";
+    try {
+      jwt.verify(t, apkLinkSecret, { audience: "resident-apk" });
+    } catch {
+      res.status(403).json({ error: "This download link is invalid or has expired. Ask for a new one." });
+      return;
+    }
+    if (!fs.existsSync(residentApkPath)) {
+      res.status(404).json({ error: "The resident app has not been built yet" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/vnd.android.package-archive");
+    res.download(residentApkPath, "QR-Intercom.apk");
+  });
+
+  router.get("/admin/app-link", requireAdmin, (req: Request, res: Response) => {
+    if (!assertAdmin(req, res)) return;
+    if (!fs.existsSync(residentApkPath)) {
+      res.status(404).json({ error: "The resident app has not been built yet" });
+      return;
+    }
+    const t = jwt.sign({}, apkLinkSecret, { audience: "resident-apk", expiresIn: APK_LINK_TTL });
+    res.json({
+      // Only an explicitly configured address: the built-in fallback is
+      // localhost, which is useless in a message to someone else's phone.
+      publicBaseUrl: process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : null,
+      path: `/api/app/resident.apk?t=${encodeURIComponent(t)}`,
+      expiresIn: APK_LINK_TTL,
+    });
+  });
+
   router.get("/admin/residents", requireAdmin, (req: Request, res: Response) => {
     if (!assertAdmin(req, res)) return;
     const residents = db

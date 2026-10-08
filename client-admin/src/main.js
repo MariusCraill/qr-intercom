@@ -219,6 +219,7 @@ function renderResidents() {
         <button class="btn btn-sm" onclick="showResidentQr('${r.id}')">QR</button>
         <button class="btn btn-sm" onclick="editResident('${r.id}')">Edit</button>
         <button class="btn btn-sm" onclick="resetResidentPassword('${r.id}')">Reset password</button>
+        <button class="btn btn-sm btn-whatsapp" onclick="whatsappApp('${r.id}')">WhatsApp app</button>
         <button class="btn btn-danger btn-sm" onclick="deleteResident('${r.id}')">Delete</button>
       </div>
     </div>`
@@ -334,6 +335,36 @@ window.editResident = (id) => {
     modalForm.querySelector('[name="phone"]').value = r.phone || "";
     modalForm.querySelector('[name="email"]').value = r.email || "";
   }, 0);
+};
+
+/**
+ * Opens WhatsApp with a message to the resident holding a download link for
+ * the resident Android app. The link carries a token that expires, so an old
+ * message forwarded around does not stay a working download forever.
+ */
+window.whatsappApp = async (id) => {
+  const r = residents.find((x) => x.id === id);
+  if (!r) return;
+  // Open the window inside the click: a window opened after an await is
+  // treated as a popup and blocked.
+  const win = window.open("", "_blank");
+  try {
+    const link = await api("/admin/app-link");
+    const url = (link.publicBaseUrl || window.location.origin) + link.path;
+    const text =
+      `Hi ${r.name}, here is the QR Intercom app for your phone, so you can answer the gate:\n${url}\n\n` +
+      `Open the link on your Android phone and install it (allow installs from your browser if asked). ` +
+      `The link works for ${link.expiresIn === "7d" ? "7 days" : link.expiresIn}.`;
+    // wa.me needs the number in international form, digits only. A local
+    // number (no +) cannot be converted safely, so WhatsApp asks who to send to.
+    const intl = (r.phone || "").trim().startsWith("+") ? r.phone.replace(/\D/g, "") : "";
+    const wa = `https://wa.me/${intl}?text=${encodeURIComponent(text)}`;
+    if (win) win.location.href = wa;
+    else window.location.href = wa;
+  } catch (err) {
+    if (win) win.close();
+    alert(err.message);
+  }
 };
 
 window.deleteResident = async (id) => {
