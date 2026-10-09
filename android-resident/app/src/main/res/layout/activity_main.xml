@@ -6,12 +6,19 @@
     android:layout_height="match_parent"
     android:background="@color/bg_dark">
 
-<LinearLayout
+<!-- Scrolls so nothing is cut off on small screens or with large text. -->
+<ScrollView
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true">
 
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Header: who is signed in -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -30,9 +37,7 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_primary"
                 android:textSize="20sp"
-                android:textStyle="bold"
-                android:textIsSelectable="false"
-                android:drawablePadding="4dp" />
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/textResidentUnit"
@@ -58,48 +63,40 @@
             android:text="@string/btn_logout"
             android:textColor="@color/danger"
             android:textSize="13sp"
-            android:layout_marginStart="8dp" />
+            android:layout_marginStart="4dp" />
     </LinearLayout>
 
-    <TextView
+    <!-- Call status: one compact card, idle or ringing -->
+    <LinearLayout
+        android:id="@+id/layoutIdle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Tap your name to show QR code"
-        android:textColor="@color/text_secondary"
-        android:textSize="11sp"
-        android:layout_marginTop="2dp" />
+        android:layout_marginTop="20dp"
+        android:background="@drawable/card_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="16dp">
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/border"
-        android:layout_marginVertical="16dp" />
-
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📞"
+            android:textSize="28sp" />
 
         <LinearLayout
-            android:id="@+id/layoutIdle"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="14dp"
             android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="📞"
-                android:textSize="48sp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/waiting_calls"
                 android:textColor="@color/text_primary"
-                android:textSize="16sp"
-                android:layout_marginTop="16dp" />
+                android:textSize="15sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -107,70 +104,139 @@
                 android:text="You will be notified when a visitor rings."
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp"
-                android:layout_marginTop="4dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnGateDevice"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginTop="32dp"
-                android:text="Gate device: set up eWeLink"
-                android:textAllCaps="false"
-                android:textColor="@color/primary"
-                app:strokeColor="@color/primary"
-                app:cornerRadius="10dp" />
+                android:layout_marginTop="2dp" />
         </LinearLayout>
+    </LinearLayout>
 
-        <LinearLayout
-            android:id="@+id/layoutCallActive"
+    <LinearLayout
+        android:id="@+id/layoutCallActive"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:background="@drawable/card_bg"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/textCallerInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/visitor_calling"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/textCallStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Connected"
+            android:textColor="@color/accent"
+            android:textSize="14sp"
+            android:layout_marginTop="4dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEndCall"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:visibility="gone">
+            android:layout_height="52dp"
+            android:text="@string/btn_end_call"
+            android:textColor="@color/danger"
+            android:textSize="16sp"
+            app:strokeColor="@color/danger"
+            app:cornerRadius="12dp"
+            android:layout_marginTop="12dp" />
+    </LinearLayout>
 
-            <TextView
-                android:id="@+id/textCallerInfo"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/visitor_calling"
-                android:textColor="@color/text_primary"
-                android:textSize="18sp" />
+    <!-- Gate opening (eWeLink) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/card_bg"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-            <TextView
-                android:id="@+id/textCallStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Connected"
-                android:textColor="@color/accent"
-                android:textSize="14sp"
-                android:layout_marginTop="4dp" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Gate opening"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnEndCall"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="240dp"
-                android:layout_height="52dp"
-                android:text="@string/btn_end_call"
-                android:textColor="@color/danger"
-                android:textSize="16sp"
-                app:strokeColor="@color/danger"
-                app:cornerRadius="12dp"
-                android:layout_marginTop="12dp" />
-        </LinearLayout>
-    </FrameLayout>
+        <TextView
+            android:id="@+id/textGateInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Checking…"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGateDevice"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:text="Connect eWeLink"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:backgroundTint="@color/primary"
+            android:enabled="false"
+            app:cornerRadius="10dp" />
+    </LinearLayout>
+
+    <!-- QR code for the gate -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/card_bg"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Your QR code"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Visitors scan it at the gate to call you."
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShowQr"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:text="Show my QR code"
+            android:textAllCaps="false"
+            android:textColor="@color/primary"
+            app:strokeColor="@color/primary"
+            app:cornerRadius="10dp" />
+    </LinearLayout>
 </LinearLayout>
+</ScrollView>
 
 <LinearLayout
     android:id="@+id/qrContainer"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:layout_gravity="top|start"
-    android:layout_margin="12dp"
+    android:layout_gravity="center"
     android:orientation="vertical"
     android:gravity="center_horizontal"
-    android:background="@color/surface"
+    android:background="@drawable/card_bg"
     android:elevation="8dp"
     android:padding="16dp"
     android:visibility="gone">

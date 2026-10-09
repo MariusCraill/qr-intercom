@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var imageQr: ImageView
     private lateinit var textQrAddress: TextView
     private lateinit var btnGateDevice: MaterialButton
+    private lateinit var textGateInfo: TextView
 
     /** Set while the eWeLink sign-in page is open in the browser. */
     private var awaitingEwelinkSignIn = false
@@ -102,7 +103,9 @@ class MainActivity : AppCompatActivity() {
         qrContainer.setOnClickListener { qrContainer.visibility = View.GONE }
 
         btnGateDevice = findViewById(R.id.btnGateDevice)
+        textGateInfo = findViewById(R.id.textGateInfo)
         btnGateDevice.setOnClickListener { onGateDeviceClicked() }
+        findViewById<MaterialButton>(R.id.btnShowQr).setOnClickListener { showQrCode() }
 
         btnLogout.setOnClickListener {
             CallService.stop(this)
@@ -209,12 +212,27 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val status = try { GateApi.status(this@MainActivity) } catch (_: Exception) { null }
             gateStatus = status
-            btnGateDevice.visibility = if (status?.configured == true) View.VISIBLE else View.GONE
-            btnGateDevice.text = when {
-                status == null || !status.linked -> "Gate device: set up eWeLink"
-                status.deviceName == null -> "Gate device: choose a device"
-                else -> "Gate device: ${status.deviceName}"
+            // The section always shows, so it is clear why the button is or is
+            // not usable, instead of silently disappearing.
+            val (info, label, enabled) = when {
+                status == null -> Triple("Couldn't reach the intercom server.", "Try again", true)
+                !status.configured -> Triple(
+                    "Not available yet: your building admin still has to switch on eWeLink for the intercom.",
+                    "Connect eWeLink", false)
+                !status.linked -> Triple(
+                    "Connect your eWeLink account and choose the device that opens your gate. " +
+                        "During a call you'll get an Open Gate button.",
+                    "Connect eWeLink", true)
+                status.deviceName == null -> Triple(
+                    "eWeLink is connected. Choose the device that opens your gate.",
+                    "Choose gate device", true)
+                else -> Triple(
+                    "Calls show an Open Gate button that switches on \"${status.deviceName}\".",
+                    "Change gate device", true)
             }
+            textGateInfo.text = info
+            btnGateDevice.text = label
+            btnGateDevice.isEnabled = enabled
             // Back from the eWeLink sign-in page: go straight to picking a device.
             if (awaitingEwelinkSignIn && status?.linked == true) {
                 awaitingEwelinkSignIn = false
@@ -226,7 +244,9 @@ class MainActivity : AppCompatActivity() {
     private fun onGateDeviceClicked() {
         val status = gateStatus
         when {
-            status == null || !status.linked -> startEwelinkSignIn()
+            status == null -> refreshGateStatus()
+            !status.configured -> Unit
+            !status.linked -> startEwelinkSignIn()
             status.deviceName == null -> pickGateDevice()
             else -> androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Gate device")
