@@ -272,6 +272,13 @@ export class SignalingServer {
     return this.wssList.reduce((count, wss) => count + wss.clients.size, 0);
   }
 
+  /** True while one of this resident's sessions is paired with a visitor. */
+  isResidentInCall(residentId: string): boolean {
+    return this.findResidentSessions(residentId).some(
+      (s) => !!s.callPeerId && this.sessions.has(s.callPeerId),
+    );
+  }
+
   getSessionCount(): number {
     return this.sessions.size;
   }

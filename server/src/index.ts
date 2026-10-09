@@ -8,6 +8,7 @@ import path from "path";
 import { loadConfig } from "./config/index.js";
 import { initializeDatabase } from "./db/schema.js";
 import { createApiRouter } from "./routes/api.js";
+import { createEwelinkRouter } from "./routes/ewelink.js";
 import { SignalingServer } from "./signaling/handler.js";
 
 const config = loadConfig();
@@ -80,6 +81,7 @@ app.use(cors({ origin: config.corsOrigins, credentials: true }));
 app.use(express.json({ limit: "256kb" }));
 
 // â”€â”€ REST API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+app.use("/api", createEwelinkRouter(db, config, (id) => signaling.isResidentInCall(id)));
 app.use("/api", createApiRouter(db, config));
 
 // â”€â”€ Root landing: serve the resident portal so the funnel URL works â”€â”€

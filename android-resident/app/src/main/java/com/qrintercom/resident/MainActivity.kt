@@ -45,6 +45,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var qrContainer: LinearLayout
     private lateinit var imageQr: ImageView
     private lateinit var textQrAddress: TextView
+    private lateinit var btnGateDevice: MaterialButton
+
+    /** Set while the eWeLink sign-in page is open in the browser. */
+    private var awaitingEwelinkSignIn = false
+    private var gateStatus: GateApi.Status? = null
 
     private val signalReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -95,6 +100,9 @@ class MainActivity : AppCompatActivity() {
 
         textName.setOnClickListener { showQrCode() }
         qrContainer.setOnClickListener { qrContainer.visibility = View.GONE }
+
+        btnGateDevice = findViewById(R.id.btnGateDevice)
+        btnGateDevice.setOnClickListener { onGateDeviceClicked() }
 
         btnLogout.setOnClickListener {
             CallService.stop(this)
@@ -192,6 +200,106 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val filter = IntentFilter("com.qrintercom.resident.SIGNAL")
         ContextCompat.registerReceiver(this, signalReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        refreshGateStatus()
+    }
+
+    // ── eWeLink gate device ──────────────────────────────────────────
+
+    private fun refreshGateStatus() {
+        lifecycleScope.launch {
+            val status = try { GateApi.status(this@MainActivity) } catch (_: Exception) { null }
+            gateStatus = status
+            btnGateDevice.visibility = if (status?.configured == true) View.VISIBLE else View.GONE
+            btnGateDevice.text = when {
+                status == null || !status.linked -> "Gate device: set up eWeLink"
+                status.deviceName == null -> "Gate device: choose a device"
+                else -> "Gate device: ${status.deviceName}"
+            }
+            // Back from the eWeLink sign-in page: go straight to picking a device.
+            if (awaitingEwelinkSignIn && status?.linked == true) {
+                awaitingEwelinkSignIn = false
+                pickGateDevice()
+            }
+        }
+    }
+
+    private fun onGateDeviceClicked() {
+        val status = gateStatus
+        when {
+            status == null || !status.linked -> startEwelinkSignIn()
+            status.deviceName == null -> pickGateDevice()
+            else -> androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Gate device")
+                .setMessage("Calls show an Open Gate button that switches on \"${status.deviceName}\".")
+                .setPositiveButton("Change device") { _, _ -> pickGateDevice() }
+                .setNeutralButton("Disconnect eWeLink") { _, _ -> disconnectEwelink() }
+                .setNegativeButton("Close", null)
+                .show()
+        }
+    }
+
+    /** eWeLink's own sign-in page, in the browser: the password never touches this app. */
+    private fun startEwelinkSignIn() {
+        lifecycleScope.launch {
+            try {
+                val url = GateApi.authorizeUrl(this@MainActivity)
+                awaitingEwelinkSignIn = true
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun pickGateDevice() {
+        lifecycleScope.launch {
+            val devices = try {
+                GateApi.devices(this@MainActivity)
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (devices.isEmpty()) {
+                Toast.makeText(this@MainActivity, "No devices on this eWeLink account", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            // One entry per channel of a multi-channel relay, so the right one is chosen.
+            val choices = devices.flatMap { d ->
+                if (d.outlets.size <= 1) listOf(d to null as Int?)
+                else d.outlets.map { d to it as Int? }
+            }
+            val labels = choices.map { (d, outlet) ->
+                val name = if (outlet == null) d.name else "${d.name} – channel ${outlet + 1}"
+                if (d.online) name else "$name (offline)"
+            }.toTypedArray()
+            androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                .setTitle("Which device opens your gate?")
+                .setItems(labels) { _, which ->
+                    val (device, outlet) = choices[which]
+                    lifecycleScope.launch {
+                        try {
+                            GateApi.chooseDevice(this@MainActivity, device, outlet)
+                            Toast.makeText(this@MainActivity, "Gate device saved", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+                        }
+                        refreshGateStatus()
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    private fun disconnectEwelink() {
+        lifecycleScope.launch {
+            try {
+                GateApi.disconnect(this@MainActivity)
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+            refreshGateStatus()
+        }
     }
 
     override fun onPause() {

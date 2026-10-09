@@ -66,6 +66,21 @@
                 android:fontFamily="monospace" />
         </LinearLayout>
 
+        <!-- Shown only when an eWeLink gate device is set up. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnOpenGate"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="12dp"
+            android:text="Open Gate"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/bg_dark"
+            android:backgroundTint="@color/accent"
+            android:visibility="gone"
+            app:cornerRadius="10dp" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnEndCall"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"

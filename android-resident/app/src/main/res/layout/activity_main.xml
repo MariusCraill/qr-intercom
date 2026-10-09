@@ -108,6 +108,18 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp"
                 android:layout_marginTop="4dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGateDevice"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginTop="32dp"
+                android:text="Gate device: set up eWeLink"
+                android:textAllCaps="false"
+                android:textColor="@color/primary"
+                app:strokeColor="@color/primary"
+                app:cornerRadius="10dp" />
         </LinearLayout>
 
         <LinearLayout

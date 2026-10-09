@@ -111,6 +111,21 @@ export function initializeDatabase(dbPath: string): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_password_resets_account
       ON password_resets(account_type, account_id);
+
+    -- A resident's linked eWeLink account and the one device that opens
+    -- their gate. Tokens come from eWeLink's own sign-in page; the eWeLink
+    -- password never reaches this server.
+    CREATE TABLE IF NOT EXISTS ewelink_links (
+      resident_id        TEXT PRIMARY KEY REFERENCES residents(id) ON DELETE CASCADE,
+      region             TEXT NOT NULL,
+      access_token       TEXT NOT NULL,
+      refresh_token      TEXT NOT NULL,
+      access_expires_at  INTEGER NOT NULL,
+      device_id          TEXT,
+      device_name        TEXT,
+      device_outlet      INTEGER,
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Backfill phone_norm from the formatted phone, in place. Written as an

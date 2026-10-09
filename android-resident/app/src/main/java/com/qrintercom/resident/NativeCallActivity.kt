@@ -34,6 +34,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -113,6 +114,7 @@ class NativeCallActivity : AppCompatActivity() {
         Log.d(TAG, "Call: visitor=$visitorId, session=$sessionId")
 
         findViewById<MaterialButton>(R.id.btnEndCall).setOnClickListener { endCall() }
+        setUpGateButton()
 
         val perms = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -395,6 +397,34 @@ class NativeCallActivity : AppCompatActivity() {
             }, null)
         } catch (e: Exception) {
             Log.e(TAG, "Camera open failed", e)
+        }
+    }
+
+    /** Shows Open Gate when the resident has an eWeLink gate device set up. */
+    private fun setUpGateButton() {
+        val btn = findViewById<MaterialButton>(R.id.btnOpenGate)
+        lifecycleScope.launch {
+            val status = try { GateApi.status(this@NativeCallActivity) } catch (_: Exception) { null }
+            val name = status?.deviceName ?: return@launch
+            btn.text = "Open Gate ($name)"
+            btn.visibility = android.view.View.VISIBLE
+        }
+        btn.setOnClickListener {
+            btn.isEnabled = false
+            btn.text = "Opening…"
+            lifecycleScope.launch {
+                val result = try {
+                    GateApi.open(this@NativeCallActivity)
+                    "Gate opened"
+                } catch (e: Exception) {
+                    "Gate not opened: ${e.message}"
+                }
+                findViewById<TextView>(R.id.textCallStatus).text = result
+                android.widget.Toast.makeText(this@NativeCallActivity, result, android.widget.Toast.LENGTH_LONG).show()
+                btn.text = "Open Gate"
+                // Short cooldown so a double tap does not pulse the relay twice.
+                handler.postDelayed({ btn.isEnabled = true }, 3000)
+            }
         }
     }
 
